@@ -1,0 +1,254 @@
+import 'package:hive_flutter/hive_flutter.dart';
+
+import '../models/link_validation.dart';
+import '../models/local_library.dart';
+import '../models/resource.dart';
+
+class LocalLibraryService {
+  static const _boxName = 'jusou_local_library';
+  static const _favoritesKey = 'favorites';
+  static const _recentlyOpenedKey = 'recently_opened';
+  static const _searchHistoryKey = 'search_history';
+  static const _invalidReportsKey = 'invalid_reports';
+  static const _settingsKey = 'settings';
+  static const _validationCacheKey = 'validation_cache';
+
+  final bool enablePersistence;
+  Box<dynamic>? _box;
+  bool _initialized = false;
+  final Map<String, dynamic> _memoryStore = {};
+
+  LocalLibraryService({this.enablePersistence = true});
+
+  Future<void> initialize() async {
+    if (_initialized) return;
+    _initialized = true;
+
+    if (!enablePersistence) return;
+
+    try {
+      await Hive.initFlutter();
+      _box = await Hive.openBox<dynamic>(_boxName);
+    } on Object {
+      _box = null;
+    }
+  }
+
+  Future<LocalLibrarySnapshot> snapshot() async {
+    await initialize();
+    return LocalLibrarySnapshot(
+      favorites: _readResourceList(_favoritesKey),
+      recentlyOpened: _readResourceList(_recentlyOpenedKey),
+      searchHistory: _readHistory(),
+      invalidReports: _readInvalidReports(),
+      settings: _readSettings(),
+    );
+  }
+
+  Future<bool> toggleFavorite(Resource resource) async {
+    await initialize();
+    final favorites = _readResourceList(_favoritesKey);
+    final existingIndex = favorites.indexWhere(
+      (item) => _resourceKey(item) == _resourceKey(resource),
+    );
+
+    if (existingIndex >= 0) {
+      favorites.removeAt(existingIndex);
+      await _writeResourceList(_favoritesKey, favorites);
+      return false;
+    }
+
+    await _writeResourceList(
+      _favoritesKey,
+      [resource, ...favorites].take(100).toList(),
+    );
+    return true;
+  }
+
+  Future<void> recordOpened(Resource resource) async {
+    await initialize();
+    final items = _readResourceList(
+      _recentlyOpenedKey,
+    ).where((item) => _resourceKey(item) != _resourceKey(resource)).toList();
+    await _writeResourceList(
+      _recentlyOpenedKey,
+      [resource, ...items].take(30).toList(),
+    );
+  }
+
+  Future<void> recordSearch(String query, int total) async {
+    await initialize();
+    final normalizedQuery = query.trim();
+    if (normalizedQuery.isEmpty) return;
+
+    final items = _readHistory()
+        .where((item) => item.query != normalizedQuery)
+        .toList();
+    final next = [
+      SearchHistoryEntry(
+        query: normalizedQuery,
+        total: total,
+        searchedAt: DateTime.now(),
+      ),
+      ...items,
+    ].take(20).toList();
+    await _write(_searchHistoryKey, next.map((item) => item.toJson()).toList());
+  }
+
+  Future<void> reportInvalid(
+    Resource resource, {
+    String reason = '用户标记失效',
+  }) async {
+    await initialize();
+    final reports = _readInvalidReports()
+        .where((item) => item.shareUrl != resource.shareUrl)
+        .toList();
+    final next = [
+      InvalidLinkReport(
+        title: resource.title,
+        shareUrl: resource.shareUrl,
+        sharePwd: resource.sharePwd,
+        reason: reason,
+        reportedAt: DateTime.now(),
+      ),
+      ...reports,
+    ].take(100).toList();
+    await _write(
+      _invalidReportsKey,
+      next.map((item) => item.toJson()).toList(),
+    );
+  }
+
+  Future<void> cacheValidation(Resource resource) async {
+    await initialize();
+    final validation = resource.validation;
+    if (validation == null) return;
+
+    final cache = _readValidationCache();
+    cache[_resourceKey(resource)] = validation.toJson();
+    await _write(_validationCacheKey, cache);
+  }
+
+  Future<void> cacheValidations(Iterable<Resource> resources) async {
+    await initialize();
+    final cache = _readValidationCache();
+    var changed = false;
+    for (final resource in resources) {
+      final validation = resource.validation;
+      if (validation == null) continue;
+      cache[_resourceKey(resource)] = validation.toJson();
+      changed = true;
+    }
+    if (changed) await _write(_validationCacheKey, cache);
+  }
+
+  Future<void> updateSettings(LibrarySettings settings) async {
+    await initialize();
+    await _write(_settingsKey, settings.toJson());
+  }
+
+  Future<void> clearHistory() async {
+    await initialize();
+    await _write(_searchHistoryKey, const []);
+  }
+
+  Future<void> clearRecentlyOpened() async {
+    await initialize();
+    await _write(_recentlyOpenedKey, const []);
+  }
+
+  Future<List<Resource>> applyCachedValidation(List<Resource> resources) async {
+    await initialize();
+    final cache = _readValidationCache();
+    return resources.map((resource) {
+      final cached = cache[_resourceKey(resource)];
+      if (cached is Map<String, dynamic>) {
+        return resource.copyWith(
+          validation: LinkValidationResult.fromJson(cached),
+        );
+      }
+      if (cached is Map) {
+        return resource.copyWith(
+          validation: LinkValidationResult.fromJson(
+            Map<String, dynamic>.from(cached),
+          ),
+        );
+      }
+      return resource;
+    }).toList();
+  }
+
+  List<Resource> _readResourceList(String key) {
+    final value = _read(key);
+    if (value is! List) return const [];
+    return value
+        .whereType<Map>()
+        .map((item) => Resource.fromJson(Map<String, dynamic>.from(item)))
+        .where(
+          (resource) =>
+              resource.title.isNotEmpty && resource.shareUrl.isNotEmpty,
+        )
+        .toList();
+  }
+
+  List<SearchHistoryEntry> _readHistory() {
+    final value = _read(_searchHistoryKey);
+    if (value is! List) return const [];
+    return value
+        .whereType<Map>()
+        .map(
+          (item) =>
+              SearchHistoryEntry.fromJson(Map<String, dynamic>.from(item)),
+        )
+        .where((item) => item.query.isNotEmpty)
+        .toList();
+  }
+
+  List<InvalidLinkReport> _readInvalidReports() {
+    final value = _read(_invalidReportsKey);
+    if (value is! List) return const [];
+    return value
+        .whereType<Map>()
+        .map(
+          (item) => InvalidLinkReport.fromJson(Map<String, dynamic>.from(item)),
+        )
+        .where((item) => item.shareUrl.isNotEmpty)
+        .toList();
+  }
+
+  LibrarySettings _readSettings() {
+    final value = _read(_settingsKey);
+    if (value is Map<String, dynamic>) return LibrarySettings.fromJson(value);
+    if (value is Map) {
+      return LibrarySettings.fromJson(Map<String, dynamic>.from(value));
+    }
+    return const LibrarySettings();
+  }
+
+  Map<String, dynamic> _readValidationCache() {
+    final value = _read(_validationCacheKey);
+    if (value is Map<String, dynamic>) return Map<String, dynamic>.from(value);
+    if (value is Map) return Map<String, dynamic>.from(value);
+    return <String, dynamic>{};
+  }
+
+  Future<void> _writeResourceList(String key, List<Resource> resources) async {
+    await _write(key, resources.map((resource) => resource.toJson()).toList());
+  }
+
+  dynamic _read(String key) => _box?.get(key) ?? _memoryStore[key];
+
+  Future<void> _write(String key, dynamic value) async {
+    final box = _box;
+    if (box != null) {
+      await box.put(key, value);
+      return;
+    }
+    _memoryStore[key] = value;
+  }
+
+  String _resourceKey(Resource resource) {
+    final shareUrl = resource.shareUrl.trim().toLowerCase();
+    return shareUrl.isEmpty ? resource.id : shareUrl;
+  }
+}

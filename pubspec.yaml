@@ -1,0 +1,29 @@
+name: jusou
+description: "Jusou - multi-source cloud drive resource search"
+publish_to: 'none'
+version: 0.9.8+1
+
+environment:
+  sdk: ^3.11.5
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  dio: ^5.8.0
+  flutter_bloc: ^9.1.0
+  equatable: ^2.0.7
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
+  cached_network_image: ^3.4.1
+  url_launcher: ^6.3.1
+  intl: ^0.20.2
+  path: ^1.9.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
