@@ -47,4 +47,4 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: Jusou-${{ matrix.target }}.*
-          generate_release_notes: true
+          body_path: ${{ matrix.target == 'macos' && 'RELEASE.md' || '' }}
