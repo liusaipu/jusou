@@ -11,6 +11,7 @@ import '../../data/models/resource.dart';
 import '../../data/services/local_library_service.dart';
 import '../../data/services/resource_service.dart';
 import '../../data/services/share_link_parser.dart';
+import '../../main.dart';
 
 const _allProviderKey = 'all';
 const _allYearKey = 'all';
@@ -615,6 +616,21 @@ class _HomePageState extends State<HomePage> {
                 icon: const Icon(Icons.close, size: 20),
               ),
             ),
+          ValueListenableBuilder<bool>(
+            valueListenable: _isDarkMode,
+            builder: (context, isDark, _) {
+              return Tooltip(
+                message: isDark ? '浅色模式' : '深色模式',
+                child: IconButton(
+                  onPressed: () => _isDarkMode.value = !_isDarkMode.value,
+                  icon: Icon(
+                    isDark ? Icons.light_mode : Icons.dark_mode,
+                    size: 20,
+                  ),
+                ),
+              );
+            },
+          ),
           Tooltip(
             message: '来源设置',
             child: IconButton(

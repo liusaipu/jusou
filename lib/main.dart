@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'core/theme.dart';
 import 'presentation/pages/home_page.dart';
 
+final _isDarkMode = ValueNotifier<bool>(true);
+
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(const JusouApp());
@@ -13,11 +15,16 @@ class JusouApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: '剧搜/JUSOU',
-      debugShowCheckedModeBanner: false,
-      theme: AppTheme.dark,
-      home: const HomePage(),
+    return ValueListenableBuilder<bool>(
+      valueListenable: _isDarkMode,
+      builder: (context, isDark, _) {
+        return MaterialApp(
+          title: '剧搜/JUSOU',
+          debugShowCheckedModeBanner: false,
+          theme: isDark ? AppTheme.dark : AppTheme.light,
+          home: const HomePage(),
+        );
+      },
     );
   }
 }
