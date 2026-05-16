@@ -356,7 +356,7 @@ void main() {
         await service.updateSettings(
           const LibrarySettings(
             enableRemote: false,
-            remoteUrl: 'https://example.com',
+            remoteUrls: ['https://example.com'],
           ),
         );
 

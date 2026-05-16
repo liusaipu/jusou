@@ -56,7 +56,7 @@ class ResourceService {
     List<ResourceSource>? sources,
     ResourceAggregator? aggregator,
     bool? enableRemote,
-    String? remoteUrl,
+    List<String>? remoteUrls,
   }) : _aggregator =
            aggregator ??
            ResourceAggregator(
@@ -64,7 +64,7 @@ class ResourceService {
                  sources ??
                  _defaultSources(
                    enableRemoteOverride: enableRemote,
-                   remoteUrlOverride: remoteUrl,
+                   remoteUrlsOverride: remoteUrls,
                  ),
            );
 
@@ -105,7 +105,7 @@ class ResourceService {
 
   static List<ResourceSource> _defaultSources({
     bool? enableRemoteOverride,
-    String? remoteUrlOverride,
+    List<String>? remoteUrlsOverride,
   }) {
     final home = Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'] ?? '.';
     final dataDir = p.join(home, '.jusou');
@@ -117,12 +117,18 @@ class ResourceService {
         enableRemoteOverride ??
         Platform.environment['JUSOU_ENABLE_REMOTE']?.toLowerCase() != 'false';
     if (enableRemote) {
-      final remoteUrl =
-          remoteUrlOverride ??
-          Platform.environment['JUSOU_REMOTE_URL'] ??
-          LibrarySettings.defaultRemoteUrl;
-      if (remoteUrl.isNotEmpty) {
-        sources.add(RemoteSearchSource(baseUrl: remoteUrl));
+      List<String> urls;
+      if (remoteUrlsOverride != null) {
+        urls = remoteUrlsOverride;
+      } else {
+        final envUrl = Platform.environment['JUSOU_REMOTE_URL'];
+        urls = envUrl != null && envUrl.trim().isNotEmpty ? [envUrl.trim()] : [];
+      }
+      for (final url in urls) {
+        final trimmed = url.trim();
+        if (trimmed.isNotEmpty) {
+          sources.add(RemoteSearchSource(baseUrl: trimmed));
+        }
       }
     }
 

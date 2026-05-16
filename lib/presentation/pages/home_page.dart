@@ -76,7 +76,7 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   final _searchController = TextEditingController();
-  final _remoteUrlController = TextEditingController();
+  final _remoteUrlControllers = <TextEditingController>[];
   final _libraryService = LocalLibraryService();
 
   ResourceService _resourceService = ResourceService();
@@ -124,10 +124,19 @@ class _HomePageState extends State<HomePage> {
       _searchHistory = snapshot.searchHistory;
       _invalidReports = snapshot.invalidReports;
       _settings = snapshot.settings;
-      _remoteUrlController.text = snapshot.settings.remoteUrl;
+      for (final c in _remoteUrlControllers) {
+        c.dispose();
+      }
+      _remoteUrlControllers.clear();
+      for (final url in snapshot.settings.remoteUrls) {
+        _remoteUrlControllers.add(TextEditingController(text: url));
+      }
+      if (_remoteUrlControllers.isEmpty) {
+        _remoteUrlControllers.add(TextEditingController());
+      }
       _resourceService = ResourceService(
         enableRemote: snapshot.settings.enableRemote,
-        remoteUrl: snapshot.settings.remoteUrl,
+        remoteUrls: snapshot.settings.remoteUrls,
       );
       _isLoadingLibrary = false;
     });
@@ -340,7 +349,12 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _openSettingsSheet() async {
     var enableRemote = _settings.enableRemote;
-    _remoteUrlController.text = _settings.remoteUrl;
+    final urlControllers = _remoteUrlControllers
+        .map((c) => TextEditingController(text: c.text))
+        .toList();
+    if (urlControllers.isEmpty) {
+      urlControllers.add(TextEditingController());
+    }
 
     await showModalBottomSheet<void>(
       context: context,
@@ -378,14 +392,49 @@ class _HomePageState extends State<HomePage> {
                         });
                       },
                     ),
-                    TextField(
-                      controller: _remoteUrlController,
-                      enabled: enableRemote,
-                      decoration: const InputDecoration(
-                        labelText: '远程搜索地址',
-                        prefixIcon: Icon(Icons.link, size: 18),
+                    ...List.generate(urlControllers.length, (i) {
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: urlControllers[i],
+                                enabled: enableRemote,
+                                decoration: InputDecoration(
+                                  labelText: '远程搜索地址 ${i + 1}',
+                                  prefixIcon: const Icon(Icons.link, size: 18),
+                                  suffixIcon: urlControllers.length > 1
+                                      ? IconButton(
+                                          icon: const Icon(Icons.close, size: 18),
+                                          onPressed: enableRemote
+                                              ? () {
+                                                  setSheetState(() {
+                                                    urlControllers.removeAt(i);
+                                                  });
+                                                }
+                                              : null,
+                                        )
+                                      : null,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
+                    if (urlControllers.length < LibrarySettings.maxRemoteUrls)
+                      TextButton.icon(
+                        onPressed: enableRemote
+                            ? () {
+                                setSheetState(() {
+                                  urlControllers.add(TextEditingController());
+                                });
+                              }
+                            : null,
+                        icon: const Icon(Icons.add, size: 18),
+                        label: const Text('添加备用地址'),
                       ),
-                    ),
                     const SizedBox(height: 16),
                     Wrap(
                       spacing: 8,
@@ -394,17 +443,31 @@ class _HomePageState extends State<HomePage> {
                         FilledButton.icon(
                           onPressed: () async {
                             final navigator = Navigator.of(context);
+                            final urls = urlControllers
+                                .map((c) => c.text.trim())
+                                .where((u) => u.isNotEmpty)
+                                .toList();
                             final next = LibrarySettings(
                               enableRemote: enableRemote,
-                              remoteUrl: _normalizedRemoteUrl(),
+                              remoteUrls: urls,
                             );
                             await _libraryService.updateSettings(next);
                             if (!mounted) return;
                             setState(() {
                               _settings = next;
+                              for (final c in _remoteUrlControllers) {
+                                c.dispose();
+                              }
+                              _remoteUrlControllers.clear();
+                              for (final url in urls) {
+                                _remoteUrlControllers.add(TextEditingController(text: url));
+                              }
+                              if (_remoteUrlControllers.isEmpty) {
+                                _remoteUrlControllers.add(TextEditingController());
+                              }
                               _resourceService = ResourceService(
                                 enableRemote: next.enableRemote,
-                                remoteUrl: next.remoteUrl,
+                                remoteUrls: next.remoteUrls,
                               );
                             });
                             navigator.pop();
@@ -462,12 +525,6 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  String _normalizedRemoteUrl() {
-    final value = _remoteUrlController.text.trim();
-    if (value.isEmpty) return LibrarySettings.defaultRemoteUrl;
-    return value.endsWith('/') ? value.substring(0, value.length - 1) : value;
-  }
-
   void _showDetails(Resource resource) {
     showModalBottomSheet<void>(
       context: context,
@@ -500,7 +557,9 @@ class _HomePageState extends State<HomePage> {
     _debounceTimer?.cancel();
     _searchController.removeListener(_onQueryChanged);
     _searchController.dispose();
-    _remoteUrlController.dispose();
+    for (final c in _remoteUrlControllers) {
+      c.dispose();
+    }
     super.dispose();
   }
 

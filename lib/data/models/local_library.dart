@@ -70,39 +70,54 @@ class InvalidLinkReport {
 }
 
 class LibrarySettings {
-  static const defaultRemoteUrl = '';
+  static const defaultRemoteUrls = <String>[];
+  static const maxRemoteUrls = 5;
 
   final bool enableRemote;
-  final String remoteUrl;
+  final List<String> remoteUrls;
 
   const LibrarySettings({
     this.enableRemote = true,
-    this.remoteUrl = defaultRemoteUrl,
+    this.remoteUrls = defaultRemoteUrls,
   });
 
   factory LibrarySettings.fromJson(Map<String, dynamic> json) {
     final rawEnableRemote = json['enable_remote'] ?? json['enableRemote'] ?? true;
-    final baseUrl =
+
+    final urlsRaw = json['remote_urls'] ?? json['remoteUrls'];
+    if (urlsRaw is List) {
+      final urls = urlsRaw
+          .map((e) => e.toString().trim())
+          .where((e) => e.isNotEmpty)
+          .toList();
+      return LibrarySettings(
+        enableRemote: rawEnableRemote is bool ? rawEnableRemote : true,
+        remoteUrls: urls,
+      );
+    }
+
+    // 兼容旧版单 URL 格式
+    final singleUrl =
         json['remote_url']?.toString() ??
         json['remoteUrl']?.toString() ??
-        defaultRemoteUrl;
-
+        '';
+    final trimmed = singleUrl.trim();
     return LibrarySettings(
       enableRemote: rawEnableRemote is bool ? rawEnableRemote : true,
-      remoteUrl: baseUrl.trim().isEmpty ? defaultRemoteUrl : baseUrl.trim(),
+      remoteUrls: trimmed.isEmpty ? [] : [trimmed],
     );
   }
 
-  LibrarySettings copyWith({bool? enableRemote, String? remoteUrl}) {
+  LibrarySettings copyWith({bool? enableRemote, List<String>? remoteUrls}) {
     return LibrarySettings(
       enableRemote: enableRemote ?? this.enableRemote,
-      remoteUrl: remoteUrl ?? this.remoteUrl,
+      remoteUrls: remoteUrls ?? this.remoteUrls,
     );
   }
 
   Map<String, dynamic> toJson() => {
     'enable_remote': enableRemote,
-    'remote_url': remoteUrl,
+    'remote_urls': remoteUrls,
   };
 }
 
