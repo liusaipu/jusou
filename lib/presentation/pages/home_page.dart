@@ -209,12 +209,10 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _setQueryAndSearch(String query) {
-    _suppressQueryListener = true;
     _searchController.text = query;
     _searchController.selection = TextSelection.collapsed(
       offset: _searchController.text.length,
     );
-    _suppressQueryListener = false;
     _doSearch(query);
   }
 
