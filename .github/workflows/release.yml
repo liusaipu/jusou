@@ -7,14 +7,15 @@ on:
 jobs:
   build:
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: macos-latest
             target: macos
-            asset_name: Jusou-macos.dmg
+            asset: Jusou-macos.dmg
           - os: windows-latest
             target: windows
-            asset_name: Jusou-windows.zip
+            asset: Jusou-windows.zip
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -38,16 +39,16 @@ jobs:
         run: |
           hdiutil create -volname Jusou \
             -srcfolder build/macos/Build/Products/Release/jusou.app \
-            -ov -format UDZO Jusou-macos.dmg
+            -ov -format UDZO ${{ matrix.asset }}
 
       - name: Package Windows ZIP
         if: matrix.target == 'windows'
         run: |
           Compress-Archive -Path build/windows/x64/runner/Release/* `
-            -DestinationPath Jusou-windows.zip
+            -DestinationPath ${{ matrix.asset }}
 
       - name: Upload to Release
         uses: softprops/action-gh-release@v2
         with:
-          files: Jusou-${{ matrix.target }}.*
+          files: ${{ matrix.asset }}
           body_path: ${{ matrix.target == 'macos' && 'RELEASE.md' || '' }}
