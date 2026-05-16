@@ -20,6 +20,7 @@ const _posterHeaders = {
       'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) '
       'AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15',
   'Accept': 'image/avif,image/webp,image/*,*/*;q=0.8',
+  'Referer': 'https://www.alipan.com/',
 };
 
 enum _SortMode {

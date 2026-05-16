@@ -14,7 +14,7 @@ class JusouApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Jusou',
+      title: '剧搜/JUSOU',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.dark,
       home: const HomePage(),
