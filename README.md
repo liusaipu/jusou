@@ -55,15 +55,26 @@ Jusou 默认会读取当前用户目录下的本地数据：
 
 ## Crawler
 
-`crawler/` 是独立的 Node.js 辅助脚本目录，用于抓取或整理外部页面数据：
+`crawler/` 是独立的 Node.js 爬虫脚本目录，用于抓取或整理外部页面数据。
+
+### TG 频道爬虫
+
+从 Telegram 公开频道抓取网盘分享链接，输出到 `~/.jusou/sources/telegram.json`，Jusou 可直接搜索。
 
 ```bash
 cd crawler
 npm install
-node index.js
+node tg_crawler.js
 ```
 
-抓取结果和外部来源都应视为不可信输入，导入前建议清洗并校验字段。
+频道列表见 `crawler/channels.txt`，爬虫会自动发现并追加相关频道。建议每周执行一次：
+
+```bash
+# crontab -e 添加（每周日凌晨 3 点）
+0 3 * * 0 cd /Users/lobster/myprojects/jusou && node crawler/tg_crawler.js
+```
+
+所有抓取结果视为不可信输入，导入前建议清洗并校验字段。
 
 ## 验证
 
