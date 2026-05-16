@@ -48,29 +48,31 @@ class SourceStatus {
 }
 
 /// Jusou 资源数据库服务
-/// 聚合本地索引、社区索引或远程 API adapter 后统一返回结果
+/// 聚合本地索引、社区索引或远程 API adapter 后统一返回结果。
+/// 远程源采用顺序 fallback：主源无结果时依次尝试备用地址。
 class ResourceService {
   final ResourceAggregator _aggregator;
+  final List<String> _remoteUrls;
 
   ResourceService({
     List<ResourceSource>? sources,
     ResourceAggregator? aggregator,
     bool? enableRemote,
     List<String>? remoteUrls,
-  }) : _aggregator =
-           aggregator ??
-           ResourceAggregator(
-             sources:
-                 sources ??
-                 _defaultSources(
-                   enableRemoteOverride: enableRemote,
-                   remoteUrlsOverride: remoteUrls,
-                 ),
-           );
+  })  : _remoteUrls = remoteUrls ?? _resolveRemoteUrls(enableRemote: enableRemote),
+        _aggregator =
+            aggregator ??
+            ResourceAggregator(
+              sources:
+                  sources ??
+                  _buildSources(
+                    enableRemote: enableRemote,
+                    remoteUrls: remoteUrls,
+                  ),
+            );
 
   List<ResourceSource> get sources => _aggregator.sources;
 
-  /// 搜索资源：多来源查询 -> 链接校验 -> 去重 -> 排序
   Future<({List<Resource> results, int total, int elapsedMs})> search(
     String query,
   ) async {
@@ -82,15 +84,36 @@ class ResourceService {
     );
   }
 
-  /// 搜索资源并返回来源命中、失败和去重前数量，供 UI 展示来源状态。
+  /// 搜索资源：主源 -> 备用源顺序 fallback
   Future<ResourceSearchResponse> searchDetailed(String query) async {
     final result = await _aggregator.search(query);
+
+    if (_shouldTryBackup(result)) {
+      for (int i = 1; i < _remoteUrls.length; i++) {
+        final backupUrl = _remoteUrls[i].trim();
+        if (backupUrl.isEmpty) continue;
+
+        final backupAggregator = _buildAggregatorWithRemoteUrl(backupUrl);
+        final backupResult = await backupAggregator.search(query);
+
+        if (backupResult.total > 0) {
+          return ResourceSearchResponse(
+            results: backupResult.resources,
+            total: backupResult.total,
+            totalBeforeDedupe: backupResult.totalBeforeDedupe,
+            elapsedMs: result.elapsedMs + backupResult.elapsedMs,
+            sourceStatuses: _sourceStatusesFromResult(backupResult),
+          );
+        }
+      }
+    }
+
     return ResourceSearchResponse(
       results: result.resources,
       total: result.total,
       totalBeforeDedupe: result.totalBeforeDedupe,
       elapsedMs: result.elapsedMs,
-      sourceStatuses: _sourceStatuses(result),
+      sourceStatuses: _sourceStatusesFromResult(result),
     );
   }
 
@@ -103,61 +126,34 @@ class ResourceService {
     return resource.copyWith(validation: validation);
   }
 
-  static List<ResourceSource> _defaultSources({
-    bool? enableRemoteOverride,
-    List<String>? remoteUrlsOverride,
-  }) {
-    final home = Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'] ?? '.';
-    final dataDir = p.join(home, '.jusou');
-    final sources = <ResourceSource>[
-      LocalIndexSource(indexPath: p.join(dataDir, 'index.json')),
-    ];
+  /// 获取所有分类
+  List<String> getCategories() => const ['全部', '电影', '电视剧', '纪录片', '综艺'];
 
-    final enableRemote =
-        enableRemoteOverride ??
-        Platform.environment['JUSOU_ENABLE_REMOTE']?.toLowerCase() != 'false';
-    if (enableRemote) {
-      List<String> urls;
-      if (remoteUrlsOverride != null) {
-        urls = remoteUrlsOverride;
-      } else {
-        final envUrl = Platform.environment['JUSOU_REMOTE_URL'];
-        urls = envUrl != null && envUrl.trim().isNotEmpty ? [envUrl.trim()] : [];
-      }
-      for (final url in urls) {
-        final trimmed = url.trim();
-        if (trimmed.isNotEmpty) {
-          sources.add(RemoteSearchSource(baseUrl: trimmed));
-        }
-      }
-    }
+  /// 获取最新资源
+  List<Resource> getRecent({int limit = 20}) {
+    final resources = _aggregator.sources.expand((source) {
+      if (source is LocalIndexSource) return source.getAllLoaded();
+      if (source is JsonFileResourceSource) return source.getAllLoaded();
+      return const <Resource>[];
+    }).toList();
 
-    final sourcesDir = Directory(p.join(dataDir, 'sources'));
-    if (sourcesDir.existsSync()) {
-      final files =
-          sourcesDir
-              .listSync()
-              .whereType<File>()
-              .where((file) => p.extension(file.path).toLowerCase() == '.json')
-              .toList()
-            ..sort((a, b) => a.path.compareTo(b.path));
-
-      for (final file in files) {
-        final name = p.basenameWithoutExtension(file.path);
-        sources.add(
-          JsonFileResourceSource(
-            filePath: file.path,
-            sourceId: 'json_$name',
-            sourceLabel: name,
-          ),
-        );
-      }
-    }
-
-    return sources;
+    resources.sort((a, b) => (b.updatedAt ?? DateTime(1970))
+        .compareTo(a.updatedAt ?? DateTime(1970)));
+    return resources.take(limit).toList();
   }
 
-  List<SourceStatus> _sourceStatuses(AggregatedSearchResult result) {
+  static bool _shouldTryBackup(AggregatedSearchResult result) =>
+      result.total == 0;
+
+  ResourceAggregator _buildAggregatorWithRemoteUrl(String url) {
+    final remoteSource = RemoteSearchSource(baseUrl: url);
+    final baseSources = _aggregator.sources
+        .where((s) => s.id != 'remote')
+        .toList();
+    return ResourceAggregator(sources: [remoteSource, ...baseSources]);
+  }
+
+  List<SourceStatus> _sourceStatusesFromResult(AggregatedSearchResult result) {
     return _aggregator.sources.map((source) {
       final successes = result.sourceResults.where((item) {
         return item.sourceId == source.id;
@@ -192,19 +188,65 @@ class ResourceService {
     }).toList();
   }
 
-  /// 获取所有分类
-  List<String> getCategories() => const ['全部', '电影', '电视剧', '纪录片', '综艺'];
+  static List<String> _resolveRemoteUrls({bool? enableRemote}) {
+    final enable = enableRemote ??
+        Platform.environment['JUSOU_ENABLE_REMOTE']?.toLowerCase() != 'false';
+    if (!enable) return [];
+    final envUrl = Platform.environment['JUSOU_REMOTE_URL'];
+    return envUrl != null && envUrl.trim().isNotEmpty ? [envUrl.trim()] : [];
+  }
 
-  /// 获取最新资源
-  List<Resource> getRecent({int limit = 20}) {
-    final resources = _aggregator.sources.expand((source) {
-      if (source is LocalIndexSource) return source.getAllLoaded();
-      if (source is JsonFileResourceSource) return source.getAllLoaded();
-      return const <Resource>[];
-    }).toList();
+  static List<ResourceSource> _buildSources({
+    bool? enableRemote,
+    List<String>? remoteUrls,
+  }) {
+    final home = Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'] ?? '.';
+    final dataDir = p.join(home, '.jusou');
+    final sources = <ResourceSource>[
+      LocalIndexSource(indexPath: p.join(dataDir, 'index.json')),
+    ];
 
-    resources.sort((a, b) => (b.updatedAt ?? DateTime(1970))
-        .compareTo(a.updatedAt ?? DateTime(1970)));
-    return resources.take(limit).toList();
+    final enable = enableRemote ??
+        Platform.environment['JUSOU_ENABLE_REMOTE']?.toLowerCase() != 'false';
+    if (enable) {
+      List<String> urls;
+      if (remoteUrls != null) {
+        urls = remoteUrls;
+      } else {
+        final envUrl = Platform.environment['JUSOU_REMOTE_URL'];
+        urls = envUrl != null && envUrl.trim().isNotEmpty ? [envUrl.trim()] : [];
+      }
+      // 只将第一个 URL 加入 aggregator，其余作为备用 fallback
+      if (urls.isNotEmpty) {
+        final trimmed = urls.first.trim();
+        if (trimmed.isNotEmpty) {
+          sources.add(RemoteSearchSource(baseUrl: trimmed));
+        }
+      }
+    }
+
+    final sourcesDir = Directory(p.join(dataDir, 'sources'));
+    if (sourcesDir.existsSync()) {
+      final files =
+          sourcesDir
+              .listSync()
+              .whereType<File>()
+              .where((file) => p.extension(file.path).toLowerCase() == '.json')
+              .toList()
+            ..sort((a, b) => a.path.compareTo(b.path));
+
+      for (final file in files) {
+        final name = p.basenameWithoutExtension(file.path);
+        sources.add(
+          JsonFileResourceSource(
+            filePath: file.path,
+            sourceId: 'json_$name',
+            sourceLabel: name,
+          ),
+        );
+      }
+    }
+
+    return sources;
   }
 }
