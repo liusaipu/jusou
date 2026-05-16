@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'core/theme.dart';
 import 'presentation/pages/home_page.dart';
 
-final _isDarkMode = ValueNotifier<bool>(true);
+final isDarkMode = ValueNotifier<bool>(true);
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -16,7 +16,7 @@ class JusouApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ValueListenableBuilder<bool>(
-      valueListenable: _isDarkMode,
+      valueListenable: isDarkMode,
       builder: (context, isDark, _) {
         return MaterialApp(
           title: '剧搜/JUSOU',

@@ -617,12 +617,12 @@ class _HomePageState extends State<HomePage> {
               ),
             ),
           ValueListenableBuilder<bool>(
-            valueListenable: _isDarkMode,
+            valueListenable: isDarkMode,
             builder: (context, isDark, _) {
               return Tooltip(
                 message: isDark ? '浅色模式' : '深色模式',
                 child: IconButton(
-                  onPressed: () => _isDarkMode.value = !_isDarkMode.value,
+                  onPressed: () => isDarkMode.value = !isDarkMode.value,
                   icon: Icon(
                     isDark ? Icons.light_mode : Icons.dark_mode,
                     size: 20,
