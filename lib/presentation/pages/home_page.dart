@@ -81,8 +81,6 @@ class _HomePageState extends State<HomePage> {
   final _libraryService = LocalLibraryService();
 
   ResourceService _resourceService = ResourceService();
-  Timer? _debounceTimer;
-  bool _suppressQueryListener = false;
   int _searchGeneration = 0;
 
   List<Resource> _allResults = [];
@@ -111,7 +109,6 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
-    _searchController.addListener(_onQueryChanged);
     _loadLibrary();
   }
 
@@ -143,27 +140,7 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  void _onQueryChanged() {
-    setState(() {});
-    if (_suppressQueryListener) return;
-
-    _debounceTimer?.cancel();
-    final query = _searchController.text.trim();
-    if (query.isEmpty) {
-      _searchGeneration++;
-      _clearSearchResults();
-      return;
-    }
-
-    if (query.length < 2) return;
-    _debounceTimer = Timer(
-      const Duration(milliseconds: 650),
-      () => _doSearch(query),
-    );
-  }
-
   Future<void> _doSearch(String query) async {
-    _debounceTimer?.cancel();
     final normalizedQuery = query.trim();
     if (normalizedQuery.isEmpty) {
       _clearSearchResults();
@@ -232,7 +209,6 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _setQueryAndSearch(String query) {
-    _debounceTimer?.cancel();
     _suppressQueryListener = true;
     _searchController.text = query;
     _searchController.selection = TextSelection.collapsed(
@@ -555,8 +531,6 @@ class _HomePageState extends State<HomePage> {
 
   @override
   void dispose() {
-    _debounceTimer?.cancel();
-    _searchController.removeListener(_onQueryChanged);
     _searchController.dispose();
     for (final c in _remoteUrlControllers) {
       c.dispose();
