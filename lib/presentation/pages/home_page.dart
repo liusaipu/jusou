@@ -75,7 +75,7 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   final _searchController = TextEditingController();
-  final _panSouBaseUrlController = TextEditingController();
+  final _remoteUrlController = TextEditingController();
   final _libraryService = LocalLibraryService();
 
   ResourceService _resourceService = ResourceService();
@@ -123,10 +123,10 @@ class _HomePageState extends State<HomePage> {
       _searchHistory = snapshot.searchHistory;
       _invalidReports = snapshot.invalidReports;
       _settings = snapshot.settings;
-      _panSouBaseUrlController.text = snapshot.settings.panSouBaseUrl;
+      _remoteUrlController.text = snapshot.settings.remoteUrl;
       _resourceService = ResourceService(
-        enablePanSou: snapshot.settings.enablePanSou,
-        panSouBaseUrl: snapshot.settings.panSouBaseUrl,
+        enableRemote: snapshot.settings.enableRemote,
+        remoteUrl: snapshot.settings.remoteUrl,
       );
       _isLoadingLibrary = false;
     });
@@ -338,8 +338,8 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _openSettingsSheet() async {
-    var enablePanSou = _settings.enablePanSou;
-    _panSouBaseUrlController.text = _settings.panSouBaseUrl;
+    var enableRemote = _settings.enableRemote;
+    _remoteUrlController.text = _settings.remoteUrl;
 
     await showModalBottomSheet<void>(
       context: context,
@@ -368,20 +368,20 @@ class _HomePageState extends State<HomePage> {
                     ),
                     const SizedBox(height: 12),
                     SwitchListTile(
-                      value: enablePanSou,
+                      value: enableRemote,
                       contentPadding: EdgeInsets.zero,
-                      title: const Text('PanSou'),
+                      title: const Text('远程搜索'),
                       onChanged: (value) {
                         setSheetState(() {
-                          enablePanSou = value;
+                          enableRemote = value;
                         });
                       },
                     ),
                     TextField(
-                      controller: _panSouBaseUrlController,
-                      enabled: enablePanSou,
+                      controller: _remoteUrlController,
+                      enabled: enableRemote,
                       decoration: const InputDecoration(
-                        labelText: 'PanSou baseUrl',
+                        labelText: '远程搜索地址',
                         prefixIcon: Icon(Icons.link, size: 18),
                       ),
                     ),
@@ -394,16 +394,16 @@ class _HomePageState extends State<HomePage> {
                           onPressed: () async {
                             final navigator = Navigator.of(context);
                             final next = LibrarySettings(
-                              enablePanSou: enablePanSou,
-                              panSouBaseUrl: _normalizedPanSouBaseUrl(),
+                              enableRemote: enableRemote,
+                              remoteUrl: _normalizedRemoteUrl(),
                             );
                             await _libraryService.updateSettings(next);
                             if (!mounted) return;
                             setState(() {
                               _settings = next;
                               _resourceService = ResourceService(
-                                enablePanSou: next.enablePanSou,
-                                panSouBaseUrl: next.panSouBaseUrl,
+                                enableRemote: next.enableRemote,
+                                remoteUrl: next.remoteUrl,
                               );
                             });
                             navigator.pop();
@@ -461,9 +461,9 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  String _normalizedPanSouBaseUrl() {
-    final value = _panSouBaseUrlController.text.trim();
-    if (value.isEmpty) return LibrarySettings.defaultPanSouBaseUrl;
+  String _normalizedRemoteUrl() {
+    final value = _remoteUrlController.text.trim();
+    if (value.isEmpty) return LibrarySettings.defaultRemoteUrl;
     return value.endsWith('/') ? value.substring(0, value.length - 1) : value;
   }
 
@@ -499,7 +499,7 @@ class _HomePageState extends State<HomePage> {
     _debounceTimer?.cancel();
     _searchController.removeListener(_onQueryChanged);
     _searchController.dispose();
-    _panSouBaseUrlController.dispose();
+    _remoteUrlController.dispose();
     super.dispose();
   }
 
@@ -700,7 +700,7 @@ class _HomePageState extends State<HomePage> {
           _MessageState.inline(
             icon: Icons.search_off,
             title: '未找到结果',
-            message: '可以换一个关键词，或在来源设置里调整 PanSou。',
+            message: '可以换一个关键词，或在来源设置里调整远程搜索。',
           ),
           if (_sourceStatuses.isNotEmpty) ...[
             const SizedBox(height: 16),

@@ -7,7 +7,7 @@ import '../models/resource.dart';
 import 'json_file_resource_source.dart';
 import 'link_validator.dart';
 import 'local_index_source.dart';
-import 'pansou_resource_source.dart';
+import 'remote_search_source.dart';
 import 'resource_aggregator.dart';
 import 'resource_source.dart';
 
@@ -55,16 +55,16 @@ class ResourceService {
   ResourceService({
     List<ResourceSource>? sources,
     ResourceAggregator? aggregator,
-    bool? enablePanSou,
-    String? panSouBaseUrl,
+    bool? enableRemote,
+    String? remoteUrl,
   }) : _aggregator =
            aggregator ??
            ResourceAggregator(
              sources:
                  sources ??
                  _defaultSources(
-                   enablePanSouOverride: enablePanSou,
-                   panSouBaseUrlOverride: panSouBaseUrl,
+                   enableRemoteOverride: enableRemote,
+                   remoteUrlOverride: remoteUrl,
                  ),
            );
 
@@ -104,8 +104,8 @@ class ResourceService {
   }
 
   static List<ResourceSource> _defaultSources({
-    bool? enablePanSouOverride,
-    String? panSouBaseUrlOverride,
+    bool? enableRemoteOverride,
+    String? remoteUrlOverride,
   }) {
     final home = Platform.environment['HOME'] ?? '.';
     final dataDir = p.join(home, '.jusou');
@@ -113,18 +113,17 @@ class ResourceService {
       LocalIndexSource(indexPath: p.join(dataDir, 'index.json')),
     ];
 
-    final enablePanSou =
-        enablePanSouOverride ??
-        Platform.environment['JUSOU_ENABLE_PANSOU']?.toLowerCase() != 'false';
-    if (enablePanSou) {
-      sources.add(
-        PanSouResourceSource(
-          baseUrl:
-              panSouBaseUrlOverride ??
-              Platform.environment['JUSOU_PANSOU_BASE_URL'] ??
-              LibrarySettings.defaultPanSouBaseUrl,
-        ),
-      );
+    final enableRemote =
+        enableRemoteOverride ??
+        Platform.environment['JUSOU_ENABLE_REMOTE']?.toLowerCase() != 'false';
+    if (enableRemote) {
+      final remoteUrl =
+          remoteUrlOverride ??
+          Platform.environment['JUSOU_REMOTE_URL'] ??
+          LibrarySettings.defaultRemoteUrl;
+      if (remoteUrl.isNotEmpty) {
+        sources.add(RemoteSearchSource(baseUrl: remoteUrl));
+      }
     }
 
     final sourcesDir = Directory(p.join(dataDir, 'sources'));
@@ -198,8 +197,8 @@ class ResourceService {
       return const <Resource>[];
     }).toList();
 
-    final sorted = List<Resource>.from(resources)
-      ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-    return sorted.take(limit).toList();
+    resources.sort((a, b) => (b.updatedAt ?? DateTime(1970))
+        .compareTo(a.updatedAt ?? DateTime(1970)));
+    return resources.take(limit).toList();
   }
 }

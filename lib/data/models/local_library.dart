@@ -70,41 +70,39 @@ class InvalidLinkReport {
 }
 
 class LibrarySettings {
-  static const defaultPanSouBaseUrl = 'https://so.252035.xyz';
+  static const defaultRemoteUrl = '';
 
-  final bool enablePanSou;
-  final String panSouBaseUrl;
+  final bool enableRemote;
+  final String remoteUrl;
 
   const LibrarySettings({
-    this.enablePanSou = true,
-    this.panSouBaseUrl = defaultPanSouBaseUrl,
+    this.enableRemote = true,
+    this.remoteUrl = defaultRemoteUrl,
   });
 
   factory LibrarySettings.fromJson(Map<String, dynamic> json) {
-    final rawEnablePanSou = json['enable_pansou'] ?? json['enablePanSou'];
+    final rawEnableRemote = json['enable_remote'] ?? json['enableRemote'] ?? true;
     final baseUrl =
-        json['pansou_base_url']?.toString() ??
-        json['panSouBaseUrl']?.toString() ??
-        defaultPanSouBaseUrl;
+        json['remote_url']?.toString() ??
+        json['remoteUrl']?.toString() ??
+        defaultRemoteUrl;
 
     return LibrarySettings(
-      enablePanSou: rawEnablePanSou is bool ? rawEnablePanSou : true,
-      panSouBaseUrl: baseUrl.trim().isEmpty
-          ? defaultPanSouBaseUrl
-          : baseUrl.trim(),
+      enableRemote: rawEnableRemote is bool ? rawEnableRemote : true,
+      remoteUrl: baseUrl.trim().isEmpty ? defaultRemoteUrl : baseUrl.trim(),
     );
   }
 
-  LibrarySettings copyWith({bool? enablePanSou, String? panSouBaseUrl}) {
+  LibrarySettings copyWith({bool? enableRemote, String? remoteUrl}) {
     return LibrarySettings(
-      enablePanSou: enablePanSou ?? this.enablePanSou,
-      panSouBaseUrl: panSouBaseUrl ?? this.panSouBaseUrl,
+      enableRemote: enableRemote ?? this.enableRemote,
+      remoteUrl: remoteUrl ?? this.remoteUrl,
     );
   }
 
   Map<String, dynamic> toJson() => {
-    'enable_pansou': enablePanSou,
-    'pansou_base_url': panSouBaseUrl,
+    'enable_remote': enableRemote,
+    'remote_url': remoteUrl,
   };
 }
 

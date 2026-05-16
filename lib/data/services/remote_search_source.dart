@@ -5,20 +5,19 @@ import 'package:dio/dio.dart';
 import '../models/resource.dart';
 import 'resource_source.dart';
 
-class PanSouResourceSource implements ResourceSource {
+class RemoteSearchSource implements ResourceSource {
   final String baseUrl;
   final int maxResults;
   final Dio _dio;
 
-  PanSouResourceSource({
-    this.baseUrl = 'https://so.252035.xyz',
+  RemoteSearchSource({
+    this.baseUrl = '',
     this.maxResults = 120,
     Dio? dio,
   }) : _dio =
            dio ??
            Dio(
              BaseOptions(
-               baseUrl: baseUrl,
                connectTimeout: const Duration(seconds: 6),
                receiveTimeout: const Duration(seconds: 18),
                sendTimeout: const Duration(seconds: 6),
@@ -26,18 +25,37 @@ class PanSouResourceSource implements ResourceSource {
            );
 
   @override
-  String get id => 'pansou';
+  String get id => 'remote';
 
   @override
-  String get label => 'PanSou';
+  String get label => '远程搜索';
 
   @override
   int get trustScore => 64;
 
   @override
   Future<SourceSearchResult> search(String query) async {
+    if (baseUrl.isEmpty) {
+      return SourceSearchResult(
+        sourceId: id,
+        sourceLabel: label,
+        resources: const [],
+        total: 0,
+        elapsedMs: 0,
+      );
+    }
+
+    final dio = Dio(
+      BaseOptions(
+        baseUrl: baseUrl,
+        connectTimeout: const Duration(seconds: 6),
+        receiveTimeout: const Duration(seconds: 18),
+        sendTimeout: const Duration(seconds: 6),
+      ),
+    );
+
     final stopwatch = Stopwatch()..start();
-    final response = await _dio.get<dynamic>(
+    final response = await dio.get<dynamic>(
       '/api/search',
       queryParameters: {'kw': query.trim()},
       options: Options(
@@ -90,7 +108,7 @@ class PanSouResourceSource implements ResourceSource {
     final results = data['results'] ?? data['items'];
     if (results is List) {
       for (final item in results.whereType<Map<String, dynamic>>()) {
-        final resource = _resourceFromItem('pan', item);
+        final resource = _resourceFromItem('remote', item);
         if (resource != null) yield resource;
       }
     }
@@ -111,7 +129,7 @@ class PanSouResourceSource implements ResourceSource {
         : null;
 
     return Resource(
-      id: 'pansou_${base64Url.encode(utf8.encode(shareUrl)).replaceAll('=', '')}',
+      id: 'remote_${base64Url.encode(utf8.encode(shareUrl)).replaceAll('=', '')}',
       title: title,
       year: _extractYear(note),
       type: _guessType(note),
@@ -120,9 +138,9 @@ class PanSouResourceSource implements ResourceSource {
       shareUrl: shareUrl,
       sharePwd: _stringValue(item['password']),
       fileSize: _extractFileSize(note),
-      source: 'pansou:$source',
+      source: 'remote:$source',
       updatedAt: _parseDateTime(item['datetime']),
-      mergedSources: const ['pansou'],
+      mergedSources: const ['remote'],
     );
   }
 

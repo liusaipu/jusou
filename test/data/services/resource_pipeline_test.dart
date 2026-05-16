@@ -37,7 +37,7 @@ void main() {
       expect(aliyun.canonicalUrl, alipan.canonicalUrl);
     });
 
-    test('recognizes common cloud drive providers from PanSou results', () {
+    test('recognizes common cloud drive providers from remote results', () {
       const parser = ShareLinkParser();
 
       expect(parser.parse('https://drive.uc.cn/s/abc123').provider, 'uc');
@@ -82,7 +82,7 @@ void main() {
         'updated_at': DateTime(2026).toIso8601String(),
         'quality_score': 88.5,
         'duplicate_count': 3,
-        'merged_sources': ['local', 'pansou'],
+        'merged_sources': ['local', 'remote'],
         'validation': {
           'level': 'httpReachable',
           'reason': '链接页面可访问',
@@ -92,7 +92,7 @@ void main() {
 
       expect(resource.qualityScore, 88.5);
       expect(resource.duplicateCount, 3);
-      expect(resource.mergedSources, ['local', 'pansou']);
+      expect(resource.mergedSources, ['local', 'remote']);
       expect(resource.validation?.level, LinkValidationLevel.httpReachable);
       expect(resource.validation?.checkedAt, checkedAt);
     });
@@ -355,8 +355,8 @@ void main() {
         await service.cacheValidation(validated);
         await service.updateSettings(
           const LibrarySettings(
-            enablePanSou: false,
-            panSouBaseUrl: 'https://example.com',
+            enableRemote: false,
+            remoteUrl: 'https://example.com',
           ),
         );
 
@@ -367,7 +367,7 @@ void main() {
         expect(snapshot.recentlyOpened.single.shareUrl, resource.shareUrl);
         expect(snapshot.searchHistory.single.query, '漫长的季节');
         expect(snapshot.invalidReports.single.shareUrl, resource.shareUrl);
-        expect(snapshot.settings.enablePanSou, isFalse);
+        expect(snapshot.settings.enableRemote, isFalse);
         expect(
           cached.single.validation?.level,
           LinkValidationLevel.recognizedShare,
