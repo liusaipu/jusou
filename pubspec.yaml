@@ -1,7 +1,7 @@
 name: jusou
-description: "Jusou - multi-source cloud drive resource search"
+description: "Jusou 剧搜 - multi-source resource search"
 publish_to: 'none'
-version: 0.9.8+1
+version: 0.9.9+1
 
 environment:
   sdk: ^3.11.5
