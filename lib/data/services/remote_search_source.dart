@@ -8,21 +8,11 @@ import 'resource_source.dart';
 class RemoteSearchSource implements ResourceSource {
   final String baseUrl;
   final int maxResults;
-  final Dio _dio;
 
   RemoteSearchSource({
     this.baseUrl = '',
     this.maxResults = 120,
-    Dio? dio,
-  }) : _dio =
-           dio ??
-           Dio(
-             BaseOptions(
-               connectTimeout: const Duration(seconds: 6),
-               receiveTimeout: const Duration(seconds: 18),
-               sendTimeout: const Duration(seconds: 6),
-             ),
-           );
+  });
 
   @override
   String get id => 'remote';

@@ -2,7 +2,6 @@ import 'dart:io';
 
 import 'package:path/path.dart' as p;
 
-import '../models/local_library.dart';
 import '../models/resource.dart';
 import 'json_file_resource_source.dart';
 import 'link_validator.dart';
@@ -137,8 +136,7 @@ class ResourceService {
       return const <Resource>[];
     }).toList();
 
-    resources.sort((a, b) => (b.updatedAt ?? DateTime(1970))
-        .compareTo(a.updatedAt ?? DateTime(1970)));
+    resources.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
     return resources.take(limit).toList();
   }
 
