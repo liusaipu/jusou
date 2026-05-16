@@ -1,15 +1,15 @@
 # Jusou
 
-Jusou 是一个基于 Flutter 的多源网盘资源搜索应用，面向电影、剧集等资源检索场景。它可以聚合本地索引、PanSou 和自定义 JSON 数据源，并在客户端完成链接识别、去重、排序、校验、收藏和历史记录管理。
+Jusou 是一个基于 Flutter 的多源资源搜索应用。它可以聚合本地索引、外部适配器和自定义 JSON 数据源，并在客户端完成链接识别、去重、排序、校验、收藏和历史记录管理。
 
 ## 功能
 
-- 多来源搜索：支持本地索引、PanSou API 和 `~/.jusou/sources/*.json` 自定义源。
-- 网盘链接识别：识别阿里云盘、Alipan、UC、迅雷、115、123 云盘等常见分享链接。
+- 多来源搜索：支持本地索引、外部适配器和 `~/.jusou/sources/*.json` 自定义源。
+- 链接识别：识别常见分享链接格式。
 - 结果整理：按相关度、最新、多源可信度和文件大小排序，并支持来源、年份、类型、提取码和链接状态过滤。
 - 去重合并：对同一分享链接或同一资源的多来源结果进行合并，保留更完整的海报、年份、大小和来源信息。
 - 链接校验：检测链接格式、可访问状态和失效标记，缓存校验结果。
-- 本地资料库：支持收藏、最近打开、搜索历史、失效反馈和 PanSou 设置。
+- 本地资料库：支持收藏、最近打开、搜索历史、失效反馈和外部源设置。
 - 跨端运行：当前包含 macOS 和 Web 平台工程。
 
 ## 快速开始
@@ -40,7 +40,7 @@ Jusou 默认会读取当前用户目录下的本地数据：
 {
   "id": "resource-id",
   "title": "资源标题",
-  "share_url": "https://www.alipan.com/s/example",
+  "share_url": "https://example.com/share/example",
   "share_pwd": "abcd",
   "source": "local",
   "year": "2024",
@@ -51,18 +51,11 @@ Jusou 默认会读取当前用户目录下的本地数据：
 }
 ```
 
-PanSou 默认开启，默认服务地址为 `https://so.252035.xyz`。也可以通过环境变量调整：
-
-```bash
-JUSOU_ENABLE_PANSOU=false flutter run -d macos
-JUSOU_PANSOU_BASE_URL=https://example.com flutter run -d macos
-```
-
-应用内的设置面板也可以开关 PanSou 并修改 baseUrl。
+外部适配器可以在应用设置中启用、停用或调整地址。
 
 ## Crawler
 
-`crawler/` 是独立的 Node.js 辅助脚本目录，用于抓取或整理外部资源数据：
+`crawler/` 是独立的 Node.js 辅助脚本目录，用于抓取或整理外部页面数据：
 
 ```bash
 cd crawler

@@ -1,7 +1,7 @@
 /**
  * jusou 爬虫
  * 
- * 从多个资源站点提取阿里云盘/夸克网盘/百度网盘分享链接。
+ * 从外部页面提取分享链接。
  * 数据输出到 ~/.jusou/index.json，供 Flutter 客户端读取。
  * 
  * 用法: node crawler/index.js
@@ -56,13 +56,13 @@ async function fetch(url) {
 
 // ========== 分享链接提取 ==========
 
-// 阿里云盘: https://www.aliyundrive.com/s/xxx 或 https://www.alipan.com/s/xxx
+// 常见分享链接格式
 const ALIYUN_REGEX = /https?:\/\/(?:www\.)?(?:aliyundrive|alipan)\.com\/s\/[a-zA-Z0-9]+/g;
 
-// 夸克网盘: https://pan.quark.cn/s/xxx
+// 另一类常见网盘链接
 const QUARK_REGEX = /https?:\/\/pan\.quark\.cn\/s\/[a-zA-Z0-9]+/g;
 
-// 百度网盘: https://pan.baidu.com/s/xxx
+// 另一类常见网盘链接
 const BAIDU_REGEX = /https?:\/\/pan\.baidu\.com\/s\/[a-zA-Z0-9]+/g;
 
 function extractShareLinks(html) {
@@ -139,10 +139,10 @@ function cleanTitle(title) {
 
 const adapters = [];
 
-// ===== Adapter 1: KXYY (开心影院) =====
+// ===== Adapter 1 =====
 // 通过搜索结果页面提取
 adapters.push({
-  name: '开心影院',
+  name: '外部适配器 1',
   async crawl() {
     const results = [];
     // 取最新电影列表
@@ -158,7 +158,7 @@ adapters.push({
         results.push({ title, detailUrl });
       }
     } catch (e) {
-      console.warn('开心影院页面抓取失败:', e.message);
+      console.warn('外部适配器 1 抓取失败:', e.message);
     }
     return results;
   },
@@ -172,7 +172,7 @@ adapters.push({
       const year = extractYear(item.title);
       const cleanName = cleanTitle(item.title);
       return {
-        id: `kxyy_${Buffer.from(links[0]).toString('base64').slice(0, 16)}`,
+        id: `source_1_${Buffer.from(links[0]).toString('base64').slice(0, 16)}`,
         title: cleanName,
         year,
         type: guessType(cleanName, html),
@@ -181,7 +181,7 @@ adapters.push({
         share_url: links[0],
         share_pwd: pwd,
         file_size: extractFileSize(html),
-        source: 'kxyy',
+        source: 'source_1',
         updated_at: new Date().toISOString(),
       };
     } catch (e) {
@@ -190,9 +190,9 @@ adapters.push({
   },
 });
 
-// ===== Adapter 2: DIDAHDP =====
+// ===== Adapter 2 =====
 adapters.push({
-  name: '嘀嗒影视',
+  name: '外部适配器 2',
   async crawl() {
     const results = [];
     try {
@@ -207,7 +207,7 @@ adapters.push({
         });
       }
     } catch (e) {
-      console.warn('嘀嗒影视抓取失败:', e.message);
+      console.warn('外部适配器 2 抓取失败:', e.message);
     }
     return results;
   },
@@ -221,7 +221,7 @@ adapters.push({
       const year = extractYear(item.title);
       const cleanName = cleanTitle(item.title);
       return {
-        id: `dida_${Buffer.from(links[0]).toString('base64').slice(0, 16)}`,
+        id: `source_2_${Buffer.from(links[0]).toString('base64').slice(0, 16)}`,
         title: cleanName,
         year,
         type: guessType(cleanName, html),
@@ -230,7 +230,7 @@ adapters.push({
         share_url: links[0],
         share_pwd: pwd,
         file_size: extractFileSize(html),
-        source: 'didahd',
+        source: 'source_2',
         updated_at: new Date().toISOString(),
       };
     } catch (e) {
@@ -239,9 +239,9 @@ adapters.push({
   },
 });
 
-// ===== Adapter 3: 真狼影视 =====
+// ===== Adapter 3 =====
 adapters.push({
-  name: '真狼影视',
+  name: '外部适配器 3',
   async crawl() {
     const results = [];
     try {
@@ -256,7 +256,7 @@ adapters.push({
         });
       }
     } catch (e) {
-      console.warn('真狼影视抓取失败:', e.message);
+      console.warn('外部适配器 3 抓取失败:', e.message);
     }
     return results;
   },
@@ -270,7 +270,7 @@ adapters.push({
       const year = extractYear(item.title);
       const cleanName = cleanTitle(item.title);
       return {
-        id: `zhenlang_${Buffer.from(links[0]).toString('base64').slice(0, 16)}`,
+        id: `source_3_${Buffer.from(links[0]).toString('base64').slice(0, 16)}`,
         title: cleanName,
         year,
         type: guessType(cleanName, html),
@@ -279,7 +279,7 @@ adapters.push({
         share_url: links[0],
         share_pwd: pwd,
         file_size: extractFileSize(html),
-        source: 'zhenlang',
+        source: 'source_3',
         updated_at: new Date().toISOString(),
       };
     } catch (e) {
