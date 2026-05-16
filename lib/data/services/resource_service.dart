@@ -107,7 +107,7 @@ class ResourceService {
     bool? enableRemoteOverride,
     String? remoteUrlOverride,
   }) {
-    final home = Platform.environment['HOME'] ?? '.';
+    final home = Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'] ?? '.';
     final dataDir = p.join(home, '.jusou');
     final sources = <ResourceSource>[
       LocalIndexSource(indexPath: p.join(dataDir, 'index.json')),
