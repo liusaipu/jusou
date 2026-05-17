@@ -3,6 +3,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 import '../models/link_validation.dart';
 import '../models/local_library.dart';
 import '../models/resource.dart';
+import 'resource_key.dart';
 
 class LocalLibraryService {
   static const _boxName = 'jusou_local_library';
@@ -100,8 +101,9 @@ class LocalLibraryService {
     String reason = '用户标记失效',
   }) async {
     await initialize();
+    final key = _resourceKey(resource);
     final reports = _readInvalidReports()
-        .where((item) => item.shareUrl != resource.shareUrl)
+        .where((item) => _invalidReportKey(item) != key)
         .toList();
     final next = [
       InvalidLinkReport(
@@ -161,7 +163,9 @@ class LocalLibraryService {
     await initialize();
     final cache = _readValidationCache();
     return resources.map((resource) {
-      final cached = cache[_resourceKey(resource)];
+      final cached = ResourceKey.candidatesForResource(resource)
+          .map((key) => cache[key])
+          .firstWhere((value) => value != null, orElse: () => null);
       if (cached is Map<String, dynamic>) {
         return resource.copyWith(
           validation: LinkValidationResult.fromJson(cached),
@@ -248,7 +252,10 @@ class LocalLibraryService {
   }
 
   String _resourceKey(Resource resource) {
-    final shareUrl = resource.shareUrl.trim().toLowerCase();
-    return shareUrl.isEmpty ? resource.id : shareUrl;
+    return ResourceKey.forResource(resource);
+  }
+
+  String _invalidReportKey(InvalidLinkReport report) {
+    return ResourceKey.forShare(id: report.shareUrl, shareUrl: report.shareUrl);
   }
 }

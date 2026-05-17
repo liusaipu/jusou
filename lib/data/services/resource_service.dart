@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 
 import '../models/resource.dart';
+import 'alipansou_search_source.dart';
 import 'json_file_resource_source.dart';
 import 'link_validator.dart';
 import 'local_index_source.dart';
@@ -58,19 +59,44 @@ class ResourceService {
     ResourceAggregator? aggregator,
     bool? enableRemote,
     List<String>? remoteUrls,
-  })  : _remoteUrls = remoteUrls ?? _resolveRemoteUrls(enableRemote: enableRemote),
-        _aggregator =
-            aggregator ??
-            ResourceAggregator(
-              sources:
-                  sources ??
-                  _buildSources(
-                    enableRemote: enableRemote,
-                    remoteUrls: remoteUrls,
-                  ),
-            );
+  }) : _remoteUrls =
+           remoteUrls ?? _resolveRemoteUrls(enableRemote: enableRemote),
+       _aggregator =
+           aggregator ??
+           ResourceAggregator(
+             sources:
+                 sources ??
+                 _buildSources(
+                   enableRemote: enableRemote,
+                   remoteUrls: remoteUrls,
+                 ),
+           );
 
   List<ResourceSource> get sources => _aggregator.sources;
+
+  bool get hasConfiguredDataSources {
+    for (final source in _aggregator.sources) {
+      if (source is LocalIndexSource) {
+        if (File(source.indexPath).existsSync()) return true;
+        continue;
+      }
+      if (source is JsonFileResourceSource) {
+        if (File(source.filePath).existsSync()) return true;
+        continue;
+      }
+      if (source is RemoteSearchSource) {
+        if (source.baseUrl.trim().isNotEmpty) return true;
+        continue;
+      }
+      if (source is AlipansouSearchSource) {
+        if (source.baseUrl.trim().isNotEmpty) return true;
+        continue;
+      }
+
+      return true;
+    }
+    return false;
+  }
 
   Future<({List<Resource> results, int total, int elapsedMs})> search(
     String query,
@@ -144,7 +170,7 @@ class ResourceService {
       result.total == 0;
 
   ResourceAggregator _buildAggregatorWithRemoteUrl(String url) {
-    final remoteSource = RemoteSearchSource(baseUrl: url);
+    final remoteSource = _remoteSourceForUrl(url);
     final baseSources = _aggregator.sources
         .where((s) => s.id != 'remote')
         .toList();
@@ -187,7 +213,8 @@ class ResourceService {
   }
 
   static List<String> _resolveRemoteUrls({bool? enableRemote}) {
-    final enable = enableRemote ??
+    final enable =
+        enableRemote ??
         Platform.environment['JUSOU_ENABLE_REMOTE']?.toLowerCase() != 'false';
     if (!enable) return [];
     final envUrl = Platform.environment['JUSOU_REMOTE_URL'];
@@ -198,13 +225,17 @@ class ResourceService {
     bool? enableRemote,
     List<String>? remoteUrls,
   }) {
-    final home = Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'] ?? '.';
+    final home =
+        Platform.environment['HOME'] ??
+        Platform.environment['USERPROFILE'] ??
+        '.';
     final dataDir = p.join(home, '.jusou');
     final sources = <ResourceSource>[
       LocalIndexSource(indexPath: p.join(dataDir, 'index.json')),
     ];
 
-    final enable = enableRemote ??
+    final enable =
+        enableRemote ??
         Platform.environment['JUSOU_ENABLE_REMOTE']?.toLowerCase() != 'false';
     if (enable) {
       List<String> urls;
@@ -212,13 +243,15 @@ class ResourceService {
         urls = remoteUrls;
       } else {
         final envUrl = Platform.environment['JUSOU_REMOTE_URL'];
-        urls = envUrl != null && envUrl.trim().isNotEmpty ? [envUrl.trim()] : [];
+        urls = envUrl != null && envUrl.trim().isNotEmpty
+            ? [envUrl.trim()]
+            : [];
       }
       // 只将第一个 URL 加入 aggregator，其余作为备用 fallback
       if (urls.isNotEmpty) {
         final trimmed = urls.first.trim();
         if (trimmed.isNotEmpty) {
-          sources.add(RemoteSearchSource(baseUrl: trimmed));
+          sources.add(_remoteSourceForUrl(trimmed));
         }
       }
     }
@@ -246,5 +279,12 @@ class ResourceService {
     }
 
     return sources;
+  }
+
+  static ResourceSource _remoteSourceForUrl(String url) {
+    if (AlipansouSearchSource.supports(url)) {
+      return AlipansouSearchSource(baseUrl: url);
+    }
+    return RemoteSearchSource(baseUrl: url);
   }
 }

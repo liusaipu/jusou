@@ -1,11 +1,17 @@
+import 'dart:typed_data';
+
+import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:jusou/data/models/link_validation.dart';
 import 'package:jusou/data/models/local_library.dart';
 import 'package:jusou/data/models/resource.dart';
+import 'package:jusou/data/services/alipansou_search_source.dart';
 import 'package:jusou/data/services/link_validator.dart';
 import 'package:jusou/data/services/local_library_service.dart';
 import 'package:jusou/data/services/resource_aggregator.dart';
 import 'package:jusou/data/services/resource_deduper.dart';
+import 'package:jusou/data/services/resource_key.dart';
+import 'package:jusou/data/services/remote_search_source.dart';
 import 'package:jusou/data/services/resource_service.dart';
 import 'package:jusou/data/services/resource_source.dart';
 import 'package:jusou/data/services/resource_text_normalizer.dart';
@@ -68,6 +74,28 @@ void main() {
 
       expect(validation.level, LinkValidationLevel.invalid);
     });
+
+    test('falls back to GET when HEAD cannot confirm reachability', () async {
+      final dio = Dio()
+        ..httpClientAdapter = _FakeHttpClientAdapter((options) {
+          if (options.method == 'HEAD') {
+            return ResponseBody.fromString('', 405);
+          }
+          return ResponseBody.fromString('', 200);
+        });
+      final validator = LinkValidator(dio: dio, enableNetworkCheck: true);
+
+      final validation = await validator.validate(
+        _resource(
+          id: 'share',
+          title: '繁花',
+          shareUrl: 'https://www.alipan.com/s/fanhua123',
+          source: 'local',
+        ),
+      );
+
+      expect(validation.level, LinkValidationLevel.httpReachable);
+    });
   });
 
   group('Resource', () {
@@ -95,6 +123,41 @@ void main() {
       expect(resource.mergedSources, ['local', 'remote']);
       expect(resource.validation?.level, LinkValidationLevel.httpReachable);
       expect(resource.validation?.checkedAt, checkedAt);
+    });
+
+    test('normalizes common resource types from json', () {
+      final documentary = Resource.fromJson({
+        'title': '地球脉动',
+        'type': '纪录片',
+        'share_url': 'https://www.alipan.com/s/doc123',
+      });
+      final variety = Resource.fromJson({
+        'title': '声生不息',
+        'type': 'variety',
+        'share_url': 'https://www.alipan.com/s/show123',
+      });
+
+      expect(documentary.type, 'documentary');
+      expect(variety.type, 'variety');
+    });
+  });
+
+  group('ResourceKey', () {
+    test('uses canonical share identity for link variants', () {
+      final aliyun = _resource(
+        id: 'a',
+        title: '狂飙',
+        shareUrl: 'https://www.aliyundrive.com/s/same123?pwd=abcd',
+        source: 'local',
+      );
+      final alipan = _resource(
+        id: 'b',
+        title: '狂飙',
+        shareUrl: 'https://www.alipan.com/s/same123',
+        source: 'remote',
+      );
+
+      expect(ResourceKey.forResource(aliyun), ResourceKey.forResource(alipan));
     });
   });
 
@@ -289,6 +352,23 @@ void main() {
   });
 
   group('ResourceService', () {
+    test('detects configured remote data sources', () {
+      final empty = ResourceService(sources: const []);
+      final remote = ResourceService(
+        remoteUrls: const ['https://api.example.test'],
+        sources: [RemoteSearchSource(baseUrl: 'https://api.example.test')],
+      );
+
+      expect(empty.hasConfiguredDataSources, isFalse);
+      expect(remote.hasConfiguredDataSources, isTrue);
+    });
+
+    test('uses alipansou adapter for configured remote url', () {
+      final service = ResourceService(remoteUrls: const ['alipansou.com']);
+
+      expect(service.sources.whereType<AlipansouSearchSource>(), hasLength(1));
+    });
+
     test('exposes per-source status and failures', () async {
       final service = ResourceService(
         sources: [
@@ -326,6 +406,110 @@ void main() {
             .level,
         SourceStatusLevel.failure,
       );
+    });
+  });
+
+  group('AlipansouSearchSource', () {
+    test('supports alipansou host names', () {
+      expect(AlipansouSearchSource.supports('https://alipansou.com'), isTrue);
+      expect(
+        AlipansouSearchSource.supports('https://www.alipansou.com'),
+        isTrue,
+      );
+      expect(AlipansouSearchSource.supports('alipansou.com'), isTrue);
+      expect(
+        AlipansouSearchSource.supports('https://api.example.test'),
+        isFalse,
+      );
+    });
+
+    test('computes challenge cookie value used by alipansou', () {
+      final cookie = AlipansouSearchSource.challengeCookieValue(
+        '4592c1122aa2602528737b5ea1bbb7c665d6667c4493a502f907433bf8e5230b'
+        'b07dc20337475005417a3429e2eaa34c',
+      );
+
+      expect(
+        cookie,
+        '6e7ceb2a708864a5fe98e470d4ede4a13b51e89dd15c55832d34b739291461d0'
+        'ecb43190217dc7ca65a57a3f265ebf1248de754a46791617dbaf5a33004c7def'
+        '28778c7a5356ced7e22474f6a6e16bd77e5ef8c83fa9a47022ac5cf3862f8a'
+        '24503e3a3e3ba98027c359b121a95e1c88',
+      );
+    });
+
+    test('parses search cards and resolves cv redirects', () async {
+      const challenge =
+          '4592c1122aa2602528737b5ea1bbb7c665d6667c4493a502f907433bf8e5230b'
+          'b07dc20337475005417a3429e2eaa34c';
+      final dio = Dio(BaseOptions(baseUrl: 'https://alipansou.com'))
+        ..httpClientAdapter = _FakeHttpClientAdapter((options) {
+          if (options.path == '/search' && options.headers['Cookie'] == null) {
+            return ResponseBody.fromString(
+              '''
+              <html>
+                <div id="ori" style="display:none;">/search?k=主角</div>
+                <script>start_load("$challenge")</script>
+                ck_ml_sea_
+              </html>
+              ''',
+              200,
+              headers: {
+                Headers.contentTypeHeader: ['text/html; charset=utf-8'],
+              },
+            );
+          }
+
+          if (options.path == '/search' &&
+              options.headers['Cookie']?.toString().contains('ck_ml_sea_=') ==
+                  true) {
+            return ResponseBody.fromString(
+              '''
+              <a href="/s/lfw80FXpCeBCoimtzj8exbPDsIri8" target="_blank">
+                <van-card>
+                  <template #title>
+                    <div name="content-title">
+                      <span style='color:red;'>主角</span>(2026） 4K 更新至13集
+                    </div>
+                  </template>
+                  <template #bottom>
+                    <div>
+                      时间: 2026-05-10 &nbsp;&nbsp;格式: <b>文件夹</b> &nbsp;&nbsp;大小: 3.8G
+                    </div>
+                  </template>
+                </van-card>
+              </a>
+              ''',
+              200,
+              headers: {
+                Headers.contentTypeHeader: ['text/html; charset=utf-8'],
+              },
+            );
+          }
+
+          if (options.path == '/cv/lfw80FXpCeBCoimtzj8exbPDsIri8') {
+            return ResponseBody.fromString(
+              '<a href="https://www.alipan.com/s/MMBcWB9zCUf">Found</a>',
+              302,
+              headers: {
+                'location': ['https://www.alipan.com/s/MMBcWB9zCUf'],
+              },
+            );
+          }
+
+          return ResponseBody.fromString('', 404);
+        });
+      final source = AlipansouSearchSource(dio: dio);
+
+      final result = await source.search('主角');
+
+      expect(result.resources, hasLength(1));
+      final resource = result.resources.single;
+      expect(resource.title, '主角 (2026） 4K 更新至13集');
+      expect(resource.shareUrl, 'https://www.alipan.com/s/MMBcWB9zCUf');
+      expect(resource.fileSize, '3.8GB');
+      expect(resource.episodeCount, 13);
+      expect(resource.updatedAt, DateTime(2026, 5, 10));
     });
   });
 
@@ -374,7 +558,64 @@ void main() {
         );
       },
     );
+
+    test(
+      'uses canonical resource keys for favorites and validation cache',
+      () async {
+        final service = LocalLibraryService(enablePersistence: false);
+        final aliyun = _resource(
+          id: 'a',
+          title: '狂飙',
+          shareUrl: 'https://www.aliyundrive.com/s/same123?pwd=abcd',
+          source: 'local',
+        );
+        final alipan = _resource(
+          id: 'b',
+          title: '狂飙 阿里云盘',
+          shareUrl: 'https://www.alipan.com/s/same123',
+          source: 'remote',
+        );
+        final validated = aliyun.copyWith(
+          validation: LinkValidationResult(
+            level: LinkValidationLevel.recognizedShare,
+            reason: '已识别',
+            checkedAt: DateTime(2026),
+          ),
+        );
+
+        expect(await service.toggleFavorite(aliyun), isTrue);
+        expect(await service.toggleFavorite(alipan), isFalse);
+        await service.cacheValidation(validated);
+
+        final snapshot = await service.snapshot();
+        final cached = await service.applyCachedValidation([alipan]);
+
+        expect(snapshot.favorites, isEmpty);
+        expect(
+          cached.single.validation?.level,
+          LinkValidationLevel.recognizedShare,
+        );
+      },
+    );
   });
+}
+
+class _FakeHttpClientAdapter implements HttpClientAdapter {
+  final ResponseBody Function(RequestOptions options) handler;
+
+  const _FakeHttpClientAdapter(this.handler);
+
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? requestStream,
+    Future<void>? cancelFuture,
+  ) async {
+    return handler(options);
+  }
+
+  @override
+  void close({bool force = false}) {}
 }
 
 class _FakeSource implements ResourceSource {

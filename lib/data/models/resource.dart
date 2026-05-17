@@ -50,7 +50,7 @@ class Resource extends Equatable {
           _fallbackId(title: title, shareUrl: shareUrl),
       title: title,
       year: _readString(json, 'year'),
-      type: _readString(json, 'type') ?? 'movie',
+      type: _normalizeType(_readString(json, 'type')),
       episodeCount: _readInt(
         json,
         'episode_count',
@@ -205,6 +205,17 @@ class Resource extends Equatable {
     final encoded = base64Url.encode(utf8.encode(source)).replaceAll('=', '');
     final token = encoded.length > 24 ? encoded.substring(0, 24) : encoded;
     return 'resource_$token';
+  }
+
+  static String _normalizeType(String? type) {
+    final value = type?.trim().toLowerCase();
+    return switch (value) {
+      'tv' || '剧集' || '电视剧' || 'series' => 'tv',
+      'documentary' || '纪录片' => 'documentary',
+      'variety' || '综艺' => 'variety',
+      'movie' || '电影' || null || '' => 'movie',
+      _ => value,
+    };
   }
 
   @override

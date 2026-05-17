@@ -84,12 +84,27 @@ class LinkValidator {
 
   Future<bool> _checkReachable(String url) async {
     final dio =
-        _dio ?? Dio(BaseOptions(connectTimeout: const Duration(seconds: 5)));
+        _dio ??
+        Dio(
+          BaseOptions(
+            connectTimeout: const Duration(seconds: 5),
+            receiveTimeout: const Duration(seconds: 8),
+          ),
+        );
+
+    if (await _requestReachable(dio, url, 'HEAD')) return true;
+    return _requestReachable(dio, url, 'GET');
+  }
+
+  Future<bool> _requestReachable(Dio dio, String url, String method) async {
     try {
-      final response = await dio.head<dynamic>(
+      final response = await dio.request<dynamic>(
         url,
         options: Options(
+          method: method,
           followRedirects: true,
+          responseType: ResponseType.plain,
+          headers: method == 'GET' ? const {'Range': 'bytes=0-0'} : null,
           validateStatus: (status) => status != null && status < 500,
         ),
       );

@@ -9,10 +9,7 @@ class RemoteSearchSource implements ResourceSource {
   final String baseUrl;
   final int maxResults;
 
-  RemoteSearchSource({
-    this.baseUrl = '',
-    this.maxResults = 120,
-  });
+  RemoteSearchSource({this.baseUrl = '', this.maxResults = 120});
 
   @override
   String get id => 'remote';
@@ -70,10 +67,22 @@ class RemoteSearchSource implements ResourceSource {
   Map<String, dynamic> _decodeResponse(dynamic data) {
     if (data is Map<String, dynamic>) return data;
     if (data is String && data.trim().isNotEmpty) {
+      if (_looksLikeHtml(data)) {
+        throw const FormatException(
+          '远程地址返回的是网页，不是 Jusou JSON API。请使用 /api/search?kw=... 兼容接口，或为该站点添加专用适配器。',
+        );
+      }
       final decoded = jsonDecode(data);
       if (decoded is Map<String, dynamic>) return decoded;
     }
     return const {};
+  }
+
+  bool _looksLikeHtml(String text) {
+    final trimmed = text.trimLeft().toLowerCase();
+    return trimmed.startsWith('<!doctype html') ||
+        trimmed.startsWith('<html') ||
+        trimmed.contains('<body');
   }
 
   Iterable<Resource> _parseResources(Map<String, dynamic> body) sync* {
