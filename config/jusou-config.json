@@ -1,0 +1,16 @@
+{
+  "app": "jusou",
+  "schema_version": 1,
+  "exported_at": "2026-05-19T14:58:13.838704",
+  "settings": {
+    "enable_remote": true,
+    "remote_urls": [
+      "https://so.252035.xyz",
+      "alipansou.com",
+      "zysou.com",
+      "soupan.xyz"
+    ],
+    "dark_mode": false,
+    "telegram_channels": []
+  }
+}

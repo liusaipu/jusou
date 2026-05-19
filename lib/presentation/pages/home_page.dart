@@ -75,8 +75,6 @@ enum _ValidationFilter {
   final String label;
 }
 
-enum _ConfigQuickAction { exportConfig, importConfig }
-
 const _configFileTypeGroup = XTypeGroup(
   label: 'JSON 配置文件',
   extensions: <String>['json'],
@@ -421,7 +419,6 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _openSettingsSheet() async {
     var enableRemote = _settings.enableRemote;
-    var darkMode = _settings.darkMode;
     final urlControllers = _remoteUrlControllers
         .map((c) => TextEditingController(text: c.text))
         .toList();
@@ -450,24 +447,6 @@ class _HomePageState extends State<HomePage> {
                   child: ListView(
                     shrinkWrap: true,
                     children: [
-                      const Text(
-                        '配置',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      SwitchListTile(
-                        value: darkMode,
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text('深色模式'),
-                        onChanged: (value) {
-                          setSheetState(() {
-                            darkMode = value;
-                          });
-                        },
-                      ),
                       SwitchListTile(
                         value: enableRemote,
                         contentPadding: EdgeInsets.zero,
@@ -607,7 +586,7 @@ class _HomePageState extends State<HomePage> {
                               final next = LibrarySettings(
                                 enableRemote: enableRemote,
                                 remoteUrls: urls,
-                                darkMode: darkMode,
+                                darkMode: _settings.darkMode,
                                 telegramChannels: _parseTelegramChannels(
                                   telegramController.text,
                                 ),
@@ -795,51 +774,11 @@ class _HomePageState extends State<HomePage> {
             },
           ),
           Tooltip(
-            message: '来源设置',
+            message: '设置',
             child: IconButton(
               onPressed: _openSettingsSheet,
               icon: const Icon(Icons.tune, size: 20),
             ),
-          ),
-          PopupMenuButton<_ConfigQuickAction>(
-            tooltip: '导入/导出配置',
-            icon: const Icon(Icons.more_vert, size: 20),
-            onSelected: (action) {
-              switch (action) {
-                case _ConfigQuickAction.exportConfig:
-                  _exportConfig();
-                  break;
-                case _ConfigQuickAction.importConfig:
-                  _importConfig();
-                  break;
-              }
-            },
-            itemBuilder: (context) {
-              return [
-                const PopupMenuItem(
-                  value: _ConfigQuickAction.exportConfig,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.download_outlined, size: 18),
-                      SizedBox(width: 8),
-                      Text('导出配置'),
-                    ],
-                  ),
-                ),
-                const PopupMenuItem(
-                  value: _ConfigQuickAction.importConfig,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.upload_file, size: 18),
-                      SizedBox(width: 8),
-                      Text('导入配置'),
-                    ],
-                  ),
-                ),
-              ];
-            },
           ),
         ],
       ),
@@ -981,14 +920,14 @@ class _HomePageState extends State<HomePage> {
             icon: Icons.search_off,
             title: '未找到结果',
             message: hasConfiguredSources
-                ? '可以换一个关键词，或在来源设置里调整远程搜索。'
-                : '还没有可搜索的数据。请先导入 ~/.jusou/index.json，或在来源设置里添加远程搜索地址。',
+                ? '可以换一个关键词，或在设置里调整远程搜索。'
+                : '还没有可搜索的数据。请先导入 ~/.jusou/index.json，或在设置里添加远程搜索地址。',
             action: hasConfiguredSources
                 ? null
                 : TextButton.icon(
                     onPressed: _openSettingsSheet,
                     icon: const Icon(Icons.tune, size: 18),
-                    label: const Text('来源设置'),
+                    label: const Text('设置'),
                   ),
           ),
           if (_sourceStatuses.isNotEmpty) ...[

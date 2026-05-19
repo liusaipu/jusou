@@ -1,8 +1,46 @@
-# Jusou v1.0.1
+# Jusou v1.0.2
 
-配置导入导出与 TG 频道同步改进版本。macOS 桌面应用 + Windows 便携版。
+图标与设置入口优化版本。macOS 桌面应用 + Windows 便携版。
 
 ## 变更
+
+### 图标
+
+- 更新 macOS Dock 图标，放大主体并减少四周留白
+- 同步更新 Web 与 Windows 应用图标资源
+- macOS `Info.plist` 显式使用 `AppIcon`
+
+### 设置入口
+
+- 移除首页右上角独立更多菜单，配置导入导出入口合并到设置面板
+- 首页设置按钮文案统一为「设置」
+- 未配置数据源时的空状态引导改为打开设置面板
+
+### 配置
+
+- 新增默认配置示例 `config/jusou-config.json`
+
+## 安装
+
+### macOS
+下载 `Jusou-macos.dmg`，打开后将 Jusou 拖入 Applications 文件夹。首次提示「无法验证开发者」请在系统设置 → 隐私与安全性中点击「仍要打开」。
+
+### Windows
+下载 `Jusou-windows.zip`，解压后运行 `jusou.exe`。
+
+## 数据源
+
+默认读取 `~/.jusou/index.json` 和 `~/.jusou/sources/*.json`。远程搜索没有内置默认地址，可在应用设置中配置一个或多个地址。
+
+## 校验
+
+```
+macOS:  <!-- shasum -a 256 Jusou-macos.dmg -->
+Windows: <!-- certutil -hashfile Jusou-windows.zip SHA256 -->
+```
+
+<!--
+v1.0.1 notes retained for context:
 
 ### 配置导入导出
 
@@ -78,3 +116,4 @@
 macOS:  <!-- shasum -a 256 Jusou-macos.dmg -->
 Windows: <!-- certutil -hashfile Jusou-windows.zip SHA256 -->
 ```
+-->
