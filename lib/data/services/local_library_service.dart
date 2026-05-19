@@ -1,4 +1,8 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:path/path.dart' as p;
 
 import '../models/link_validation.dart';
 import '../models/local_library.dart';
@@ -147,6 +151,59 @@ class LocalLibraryService {
   Future<void> updateSettings(LibrarySettings settings) async {
     await initialize();
     await _write(_settingsKey, settings.toJson());
+  }
+
+  Future<String> exportConfig({DateTime? exportedAt}) async {
+    await initialize();
+    const encoder = JsonEncoder.withIndent('  ');
+    return encoder.convert(
+      _readSettings().toConfigJson(exportedAt: exportedAt),
+    );
+  }
+
+  Future<LibrarySettings> importConfigFile(String path) async {
+    await initialize();
+    final content = await File(path).readAsString();
+    return importConfig(content);
+  }
+
+  Future<LibrarySettings> importConfig(String content) async {
+    await initialize();
+    final decoded = jsonDecode(content);
+    if (decoded is! Map) {
+      throw const FormatException('配置必须是 JSON 对象');
+    }
+    final settings = LibrarySettings.fromConfigJson(
+      Map<String, dynamic>.from(decoded),
+    );
+    await updateSettings(settings);
+    return settings;
+  }
+
+  Future<File> writeConfigFile({LibrarySettings? settings}) async {
+    return writeConfigFileAt(
+      p.join(
+        Platform.environment['HOME'] ??
+            Platform.environment['USERPROFILE'] ??
+            '.',
+        '.jusou',
+        'config.json',
+      ),
+      settings: settings,
+    );
+  }
+
+  Future<File> writeConfigFileAt(
+    String path, {
+    LibrarySettings? settings,
+  }) async {
+    await initialize();
+    final file = File(path);
+    await file.parent.create(recursive: true);
+    const encoder = JsonEncoder.withIndent('  ');
+    final source = settings ?? _readSettings();
+    await file.writeAsString(encoder.convert(source.toConfigJson()));
+    return file;
   }
 
   Future<void> clearHistory() async {

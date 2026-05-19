@@ -148,3 +148,23 @@ String _formatDateTime(DateTime value) {
   return '${local.year}-${two(local.month)}-${two(local.day)} '
       '${two(local.hour)}:${two(local.minute)}';
 }
+
+List<String> _parseTelegramChannels(String text) {
+  final seen = <String>{};
+  final channels = <String>[];
+  for (final raw in text.split(RegExp(r'[\n,;]+'))) {
+    var value = raw.trim();
+    if (value.isEmpty) continue;
+    value = value
+        .replaceFirst(RegExp(r'^https?://t\.me/s/', caseSensitive: false), '')
+        .replaceFirst(RegExp(r'^https?://t\.me/', caseSensitive: false), '')
+        .replaceFirst('@', '');
+    value = value.split(RegExp(r'[/?#]')).first.trim().toLowerCase();
+    if (!RegExp(r'^[a-z0-9_]{3,}$').hasMatch(value)) continue;
+    if (seen.add(value)) {
+      channels.add(value);
+      if (channels.length >= LibrarySettings.maxTelegramChannels) break;
+    }
+  }
+  return channels;
+}

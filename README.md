@@ -53,6 +53,29 @@ Jusou 默认会读取当前用户目录下的本地数据：
 
 没有本地数据文件或远程地址时，应用会显示数据源引导。远程搜索地址可在应用设置中启用、停用或拖动排序。普通远程地址需要兼容 `/api/search?kw=关键词` JSON 接口；`alipansou.com` 会自动使用专用网页适配器，并解析站内跳转到真实阿里云盘链接。
 
+## 配置导入导出
+
+应用设置里可以导入或导出配置。导出时在保存窗口输入文件名，或选择已有 JSON 文件；如果重名，系统保存面板会先确认是否覆盖。导入时在打开窗口选择要导入的配置 JSON 文件。配置也可放在默认路径供 TG 爬虫读取：
+
+```text
+~/.jusou/config.json
+```
+
+配置包含远程搜索开关、远程搜索 URL 列表、深色模式和 Telegram 频道列表。配置包格式示例：
+
+```json
+{
+  "app": "jusou",
+  "schema_version": 1,
+  "settings": {
+    "enable_remote": true,
+    "remote_urls": ["https://example.com"],
+    "dark_mode": true,
+    "telegram_channels": ["movie_channel"]
+  }
+}
+```
+
 ## Crawler
 
 `crawler/` 是独立的 Node.js 爬虫脚本目录，用于抓取或整理外部页面数据。
@@ -67,7 +90,7 @@ npm install
 node tg_crawler.js
 ```
 
-频道列表见 `crawler/channels.txt`，爬虫会自动发现并追加相关频道。建议每周执行一次：
+频道列表见 `crawler/channels.txt`，也可以在应用设置的 TG 频道里维护。爬虫会合并读取 `crawler/channels.txt` 和 `~/.jusou/config.json` 中的 `telegram_channels`，并在自动发现新频道时同步更新。建议每周执行一次：
 
 ```bash
 # crontab -e 添加（每周日凌晨 3 点）
@@ -85,4 +108,4 @@ flutter test
 
 ## 版本
 
-当前发布版本为 `v0.9.9`，对应 Flutter 应用版本 `0.9.9+1`。
+当前发布版本为 `v1.0.1`，对应 Flutter 应用版本 `1.0.1+2`。

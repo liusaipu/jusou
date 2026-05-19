@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -74,6 +75,15 @@ enum _ValidationFilter {
   final String label;
 }
 
+enum _ConfigQuickAction { exportConfig, importConfig }
+
+const _configFileTypeGroup = XTypeGroup(
+  label: 'JSON 配置文件',
+  extensions: <String>['json'],
+  mimeTypes: <String>['application/json'],
+  uniformTypeIdentifiers: <String>['public.json'],
+);
+
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
@@ -122,6 +132,7 @@ class _HomePageState extends State<HomePage> {
     final snapshot = await _libraryService.snapshot();
     if (!mounted) return;
 
+    isDarkMode.value = snapshot.settings.darkMode;
     setState(() {
       _favorites = snapshot.favorites;
       _recentlyOpened = snapshot.recentlyOpened;
@@ -262,6 +273,11 @@ class _HomePageState extends State<HomePage> {
     _showSnack('已复制提取码');
   }
 
+  Future<void> _toggleThemeMode() async {
+    final next = _settings.copyWith(darkMode: !isDarkMode.value);
+    await _applySettings(next, refreshSearch: false);
+  }
+
   Future<void> _toggleFavorite(Resource resource) async {
     final added = await _libraryService.toggleFavorite(resource);
     final snapshot = await _libraryService.snapshot();
@@ -328,11 +344,90 @@ class _HomePageState extends State<HomePage> {
     }).toList();
   }
 
+  Future<void> _applySettings(
+    LibrarySettings settings, {
+    bool refreshSearch = true,
+  }) async {
+    await _libraryService.updateSettings(settings);
+    var wroteConfigFile = false;
+    try {
+      await _libraryService.writeConfigFile(settings: settings);
+      wroteConfigFile = true;
+    } catch (_) {
+      wroteConfigFile = false;
+    }
+    if (!mounted) return;
+
+    isDarkMode.value = settings.darkMode;
+    setState(() {
+      _settings = settings;
+      for (final c in _remoteUrlControllers) {
+        c.dispose();
+      }
+      _remoteUrlControllers.clear();
+      for (final url in settings.remoteUrls) {
+        _remoteUrlControllers.add(TextEditingController(text: url));
+      }
+      if (_remoteUrlControllers.isEmpty) {
+        _remoteUrlControllers.add(TextEditingController());
+      }
+      _resourceService = ResourceService(
+        enableRemote: settings.enableRemote,
+        remoteUrls: settings.remoteUrls,
+      );
+    });
+
+    if (refreshSearch && _searchController.text.trim().isNotEmpty) {
+      _doSearch(_searchController.text);
+    }
+
+    if (!wroteConfigFile) {
+      _showSnack('设置已保存，配置文件写入失败');
+    }
+  }
+
+  Future<void> _exportConfig() async {
+    try {
+      final location = await getSaveLocation(
+        acceptedTypeGroups: const <XTypeGroup>[_configFileTypeGroup],
+        suggestedName: 'jusou-config.json',
+        confirmButtonText: '导出',
+        canCreateDirectories: true,
+      );
+      if (location == null) return;
+
+      final file = await _libraryService.writeConfigFileAt(location.path);
+      _showSnack('配置已导出到 ${file.path}');
+    } catch (e) {
+      _showSnack('导出失败：$e');
+    }
+  }
+
+  Future<void> _importConfig() async {
+    try {
+      final file = await openFile(
+        acceptedTypeGroups: const <XTypeGroup>[_configFileTypeGroup],
+        confirmButtonText: '导入',
+      );
+      if (file == null) return;
+
+      final settings = await _libraryService.importConfigFile(file.path);
+      await _applySettings(settings);
+      _showSnack('配置已从 ${file.path} 导入');
+    } catch (e) {
+      _showSnack('导入失败：$e');
+    }
+  }
+
   Future<void> _openSettingsSheet() async {
     var enableRemote = _settings.enableRemote;
+    var darkMode = _settings.darkMode;
     final urlControllers = _remoteUrlControllers
         .map((c) => TextEditingController(text: c.text))
         .toList();
+    final telegramController = TextEditingController(
+      text: _settings.telegramChannels.join('\n'),
+    );
     if (urlControllers.isEmpty) {
       urlControllers.add(TextEditingController());
     }
@@ -352,18 +447,27 @@ class _HomePageState extends State<HomePage> {
                     16,
                     MediaQuery.viewInsetsOf(context).bottom + 16,
                   ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  child: ListView(
+                    shrinkWrap: true,
                     children: [
                       const Text(
-                        '来源设置',
+                        '配置',
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
                       const SizedBox(height: 12),
+                      SwitchListTile(
+                        value: darkMode,
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('深色模式'),
+                        onChanged: (value) {
+                          setSheetState(() {
+                            darkMode = value;
+                          });
+                        },
+                      ),
                       SwitchListTile(
                         value: enableRemote,
                         contentPadding: EdgeInsets.zero,
@@ -476,6 +580,18 @@ class _HomePageState extends State<HomePage> {
                           icon: const Icon(Icons.add, size: 18),
                           label: const Text('添加备用地址'),
                         ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: telegramController,
+                        minLines: 3,
+                        maxLines: 6,
+                        decoration: const InputDecoration(
+                          labelText: 'TG 频道',
+                          hintText: '@channel 或 https://t.me/channel，每行一个',
+                          prefixIcon: Icon(Icons.forum_outlined, size: 18),
+                          alignLabelWithHint: true,
+                        ),
+                      ),
                       const SizedBox(height: 16),
                       Wrap(
                         spacing: 8,
@@ -491,30 +607,13 @@ class _HomePageState extends State<HomePage> {
                               final next = LibrarySettings(
                                 enableRemote: enableRemote,
                                 remoteUrls: urls,
+                                darkMode: darkMode,
+                                telegramChannels: _parseTelegramChannels(
+                                  telegramController.text,
+                                ),
                               );
-                              await _libraryService.updateSettings(next);
+                              await _applySettings(next, refreshSearch: false);
                               if (!mounted) return;
-                              setState(() {
-                                _settings = next;
-                                for (final c in _remoteUrlControllers) {
-                                  c.dispose();
-                                }
-                                _remoteUrlControllers.clear();
-                                for (final url in urls) {
-                                  _remoteUrlControllers.add(
-                                    TextEditingController(text: url),
-                                  );
-                                }
-                                if (_remoteUrlControllers.isEmpty) {
-                                  _remoteUrlControllers.add(
-                                    TextEditingController(),
-                                  );
-                                }
-                                _resourceService = ResourceService(
-                                  enableRemote: next.enableRemote,
-                                  remoteUrls: next.remoteUrls,
-                                );
-                              });
                               navigator.pop();
                               if (_searchController.text.trim().isNotEmpty) {
                                 _doSearch(_searchController.text);
@@ -532,6 +631,19 @@ class _HomePageState extends State<HomePage> {
                             },
                             icon: const Icon(Icons.refresh, size: 18),
                             label: const Text('刷新本地索引'),
+                          ),
+                          TextButton.icon(
+                            onPressed: _exportConfig,
+                            icon: const Icon(Icons.download_outlined, size: 18),
+                            label: const Text('导出配置'),
+                          ),
+                          TextButton.icon(
+                            onPressed: () async {
+                              Navigator.of(context).pop();
+                              await _importConfig();
+                            },
+                            icon: const Icon(Icons.upload_file, size: 18),
+                            label: const Text('导入配置'),
                           ),
                           TextButton.icon(
                             onPressed: () async {
@@ -575,6 +687,7 @@ class _HomePageState extends State<HomePage> {
       for (final controller in urlControllers) {
         controller.dispose();
       }
+      telegramController.dispose();
     }
   }
 
@@ -672,7 +785,7 @@ class _HomePageState extends State<HomePage> {
               return Tooltip(
                 message: isDark ? '浅色模式' : '深色模式',
                 child: IconButton(
-                  onPressed: () => isDarkMode.value = !isDarkMode.value,
+                  onPressed: _toggleThemeMode,
                   icon: Icon(
                     isDark ? Icons.light_mode : Icons.dark_mode,
                     size: 20,
@@ -687,6 +800,46 @@ class _HomePageState extends State<HomePage> {
               onPressed: _openSettingsSheet,
               icon: const Icon(Icons.tune, size: 20),
             ),
+          ),
+          PopupMenuButton<_ConfigQuickAction>(
+            tooltip: '导入/导出配置',
+            icon: const Icon(Icons.more_vert, size: 20),
+            onSelected: (action) {
+              switch (action) {
+                case _ConfigQuickAction.exportConfig:
+                  _exportConfig();
+                  break;
+                case _ConfigQuickAction.importConfig:
+                  _importConfig();
+                  break;
+              }
+            },
+            itemBuilder: (context) {
+              return [
+                const PopupMenuItem(
+                  value: _ConfigQuickAction.exportConfig,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.download_outlined, size: 18),
+                      SizedBox(width: 8),
+                      Text('导出配置'),
+                    ],
+                  ),
+                ),
+                const PopupMenuItem(
+                  value: _ConfigQuickAction.importConfig,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.upload_file, size: 18),
+                      SizedBox(width: 8),
+                      Text('导入配置'),
+                    ],
+                  ),
+                ),
+              ];
+            },
           ),
         ],
       ),

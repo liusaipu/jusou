@@ -1,6 +1,6 @@
 # Jusou Progress
 
-Last updated: 2026-05-17
+Last updated: 2026-05-19
 
 This file records the current development state and implementation details so future work can resume without reconstructing context from chat history.
 
@@ -13,6 +13,7 @@ Primary local data locations:
 ```text
 ~/.jusou/index.json
 ~/.jusou/sources/*.json
+~/.jusou/config.json
 ```
 
 Main verification commands:
@@ -133,6 +134,11 @@ Implemented:
   - Drag to reorder remote URL priority.
   - Delete URLs.
   - Reordering preserves controller text.
+- Settings sheet now also supports:
+  - Persisted dark/light theme preference.
+  - Telegram channel list editing.
+  - Portable config export through a save-file dialog with user-selected names.
+  - Config import through an open-file dialog.
 - `home_page.dart` has been split into part files to reduce file size:
   - `home_page_helpers.dart`
   - `home_page_widgets.dart`
@@ -152,7 +158,14 @@ Implemented:
 - Search history.
 - Invalid link reports.
 - Validation cache.
-- Library settings, including remote search enabled flag and ordered remote URL list.
+- Library settings, including remote search enabled flag, ordered remote URL list, dark mode, and Telegram channel list.
+- Portable config package format:
+  - `app: "jusou"`
+  - `schema_version: 1`
+  - `settings.enable_remote`
+  - `settings.remote_urls`
+  - `settings.dark_mode`
+  - `settings.telegram_channels`
 
 Key files:
 
@@ -169,6 +182,7 @@ Implemented:
 - `crawler/tg_crawler.js`: Telegram public-channel crawler; extracts share links from messages and writes to `~/.jusou/sources/telegram.json`.
 - `crawler/channels.txt`: Channel list for the TG crawler.
 - Supports providers: alipan, aliyun, quark, uc, xunlei, 115, 123pan, baidu, pikpak.
+- TG crawler now merges channels from `crawler/channels.txt` and `~/.jusou/config.json`, then syncs discovered channels back to both.
 
 Key files:
 
@@ -230,6 +244,7 @@ Widget test:
 
 - `test/widget_test.dart`
 - Confirms the app shows the search field.
+- Config import/export tests cover remote URLs, dark mode, and Telegram channel normalization.
 
 ## Current Git State Notes
 

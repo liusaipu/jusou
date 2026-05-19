@@ -10,8 +10,10 @@ const path = require('path');
 const os = require('os');
 const https = require('https');
 
+const DATA_DIR = path.join(os.homedir(), '.jusou');
 const CHANNELS_FILE = path.join(__dirname, 'channels.txt');
-const OUTPUT_FILE = path.join(os.homedir(), '.jusou', 'sources', 'telegram.json');
+const CONFIG_FILE = path.join(DATA_DIR, 'config.json');
+const OUTPUT_FILE = path.join(DATA_DIR, 'sources', 'telegram.json');
 const MAX_MESSAGES_PER_CHANNEL = 30;
 const REQUEST_DELAY_MS = 2000; // Telegram 限速
 const CONCURRENCY = 3;
@@ -185,17 +187,74 @@ function saveOutput(resources) {
 }
 
 function loadChannels() {
-  const raw = fs.readFileSync(CHANNELS_FILE, 'utf-8');
-  return [...new Set(
-    raw.split('\n')
-      .map(line => line.trim())
-      .filter(line => line.length > 0 && !line.startsWith('#'))
-  )];
+  return [...new Set([...loadFileChannels(), ...loadConfigChannels()])];
 }
 
 function saveChannels(channels) {
-  channels.sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
-  fs.writeFileSync(CHANNELS_FILE, channels.join('\n') + '\n');
+  const normalized = channels
+    .map(normalizeChannel)
+    .filter(Boolean)
+    .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+  fs.writeFileSync(CHANNELS_FILE, normalized.join('\n') + '\n');
+  saveConfigChannels(normalized);
+}
+
+function loadFileChannels() {
+  try {
+    const raw = fs.readFileSync(CHANNELS_FILE, 'utf-8');
+    return raw.split('\n')
+      .map(line => normalizeChannel(line))
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+function loadConfigChannels() {
+  try {
+    if (!fs.existsSync(CONFIG_FILE)) return [];
+    const raw = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf-8'));
+    const settings = raw.settings && typeof raw.settings === 'object' ? raw.settings : raw;
+    const channels = settings.telegram_channels || settings.telegramChannels || settings.tg_channels || settings.tgChannels;
+    if (!Array.isArray(channels)) return [];
+    return channels.map(item => normalizeChannel(String(item))).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+function saveConfigChannels(channels) {
+  try {
+    let config = {};
+    if (fs.existsSync(CONFIG_FILE)) {
+      config = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf-8'));
+    }
+    if (!config || typeof config !== 'object' || Array.isArray(config)) config = {};
+    config.app = config.app || 'jusou';
+    config.schema_version = config.schema_version || 1;
+    if (!config.settings || typeof config.settings !== 'object' || Array.isArray(config.settings)) {
+      config.settings = {};
+    }
+    config.settings.telegram_channels = channels;
+    const dir = path.dirname(CONFIG_FILE);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
+  } catch (err) {
+    console.warn(`配置文件同步失败: ${err.message}`);
+  }
+}
+
+function normalizeChannel(raw) {
+  let value = raw.trim();
+  if (!value || value.startsWith('#')) return null;
+  value = value
+    .replace(/^https?:\/\/t\.me\/s\//i, '')
+    .replace(/^https?:\/\/t\.me\//i, '')
+    .replace(/^@/, '')
+    .split(/[/?#]/)[0]
+    .trim()
+    .toLowerCase();
+  return /^[a-z0-9_]{3,}$/.test(value) ? value : null;
 }
 
 async function main() {

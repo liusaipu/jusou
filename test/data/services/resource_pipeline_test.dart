@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
@@ -16,6 +17,7 @@ import 'package:jusou/data/services/resource_service.dart';
 import 'package:jusou/data/services/resource_source.dart';
 import 'package:jusou/data/services/resource_text_normalizer.dart';
 import 'package:jusou/data/services/share_link_parser.dart';
+import 'package:path/path.dart' as p;
 
 void main() {
   group('ResourceTextNormalizer', () {
@@ -541,6 +543,8 @@ void main() {
           const LibrarySettings(
             enableRemote: false,
             remoteUrls: ['https://example.com'],
+            darkMode: false,
+            telegramChannels: ['movie_channel'],
           ),
         );
 
@@ -552,6 +556,8 @@ void main() {
         expect(snapshot.searchHistory.single.query, '漫长的季节');
         expect(snapshot.invalidReports.single.shareUrl, resource.shareUrl);
         expect(snapshot.settings.enableRemote, isFalse);
+        expect(snapshot.settings.darkMode, isFalse);
+        expect(snapshot.settings.telegramChannels, ['movie_channel']);
         expect(
           cached.single.validation?.level,
           LinkValidationLevel.recognizedShare,
@@ -595,6 +601,77 @@ void main() {
           cached.single.validation?.level,
           LinkValidationLevel.recognizedShare,
         );
+      },
+    );
+
+    test('imports and exports portable config packages', () async {
+      final service = LocalLibraryService(enablePersistence: false);
+
+      final imported = await service.importConfig('''
+{
+  "app": "jusou",
+  "schema_version": 1,
+  "settings": {
+    "enable_remote": false,
+    "remote_urls": [
+      "https://one.example.test",
+      "https://two.example.test",
+      "https://one.example.test"
+    ],
+    "dark_mode": false,
+    "telegram_channels": [
+      "@MovieShare",
+      "https://t.me/s/DramaShare",
+      "bad channel"
+    ]
+  }
+}
+''');
+
+      expect(imported.enableRemote, isFalse);
+      expect(imported.remoteUrls, [
+        'https://one.example.test',
+        'https://two.example.test',
+      ]);
+      expect(imported.darkMode, isFalse);
+      expect(imported.telegramChannels, ['movieshare', 'dramashare']);
+
+      final exported = await service.exportConfig(exportedAt: DateTime(2026));
+
+      expect(exported, contains('"app": "jusou"'));
+      expect(exported, contains('"schema_version": 1'));
+      expect(exported, contains('"enable_remote": false'));
+      expect(exported, contains('"telegram_channels": ['));
+      expect(exported, contains('"movieshare"'));
+    });
+
+    test(
+      'writes selected config files by overwriting existing content',
+      () async {
+        final dir = await Directory.systemTemp.createTemp('jusou_config_test');
+        addTearDown(() => dir.delete(recursive: true));
+        final path = p.join(dir.path, 'config.json');
+        await File(path).writeAsString('old content');
+
+        final service = LocalLibraryService(enablePersistence: false);
+        await service.updateSettings(
+          const LibrarySettings(
+            enableRemote: false,
+            remoteUrls: ['https://overwrite.example.test'],
+            darkMode: false,
+            telegramChannels: ['overwrite_channel'],
+          ),
+        );
+
+        await service.writeConfigFileAt(path);
+        final content = await File(path).readAsString();
+        expect(content, isNot('old content'));
+
+        final imported = await LocalLibraryService(
+          enablePersistence: false,
+        ).importConfigFile(path);
+        expect(imported.remoteUrls, ['https://overwrite.example.test']);
+        expect(imported.telegramChannels, ['overwrite_channel']);
       },
     );
   });
