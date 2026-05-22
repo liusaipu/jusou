@@ -1,24 +1,36 @@
-# Jusou v1.0.2
+# Jusou v1.0.3
 
-图标与设置入口优化版本。macOS 桌面应用 + Windows 便携版。
+内部重构和稳定性版本。macOS 桌面应用 + Windows 便携版。
 
 ## 变更
 
-### 图标
+### 搜索与远程源
 
-- 更新 macOS Dock 图标，放大主体并减少四周留白
-- 同步更新 Web 与 Windows 应用图标资源
-- macOS `Info.plist` 显式使用 `AppIcon`
+- 远程源 id 改为带前缀（`remote:generic` / `remote:alipansou`），fallback 过滤改用 `startsWith('remote:')`，为后续添加更多站点适配器铺路
+- 链接校验请求显式设置 5 / 6 秒超时，避免单条慢响应拖慢手动校验
+- 搜索管线中默认关闭网络可达性校验的设计加注释说明，避免后续误改
 
-### 设置入口
+### TG 爬虫
 
-- 移除首页右上角独立更多菜单，配置导入导出入口合并到设置面板
-- 首页设置按钮文案统一为「设置」
-- 未配置数据源时的空状态引导改为打开设置面板
+- 移除 `crawler/tg_crawler.js` 与 `crawler/channels.txt`，频道列表统一来自 `~/.jusou/config.json`
+- 应用内 Dart 版 TG 爬虫（`lib/data/services/telegram_crawler.dart`）为唯一实现，从设置面板"运行 TG 爬虫"按钮触发
+- `crawler/index.js` 通用站点爬虫保留不变
 
-### 配置
+### UI 重构
 
-- 新增默认配置示例 `config/jusou-config.json`
+- 设置面板抽成独立 `SettingsSheet` widget（`lib/presentation/pages/settings_sheet.dart`），`HomePage` 不再持有远程 URL 控制器，`_openSettingsSheet` 由约 270 行缩到 27 行
+- `home_page.dart` 由 1259 行减至 991 行
+
+### 内部模块
+
+- `DioFactory` 集中管理 Dio 实例和超时配置
+- `ResourceFilterService` 抽出筛选 + 排序枚举
+- 删除未使用的占位模块 `app_state.dart` 和 `aliyun_drive_service.dart`
+
+### 测试
+
+- 新增远程源 id 前缀的回归断言
+- 测试总数 36 → 37，全部通过
 
 ## 安装
 
@@ -40,7 +52,25 @@ Windows: <!-- certutil -hashfile Jusou-windows.zip SHA256 -->
 ```
 
 <!--
-v1.0.1 notes retained for context:
+v1.0.2 notes retained for context:
+
+### 图标
+
+- 更新 macOS Dock 图标，放大主体并减少四周留白
+- 同步更新 Web 与 Windows 应用图标资源
+- macOS `Info.plist` 显式使用 `AppIcon`
+
+### 设置入口
+
+- 移除首页右上角独立更多菜单，配置导入导出入口合并到设置面板
+- 首页设置按钮文案统一为「设置」
+- 未配置数据源时的空状态引导改为打开设置面板
+
+### 配置
+
+- 新增默认配置示例 `config/jusou-config.json`
+
+v1.0.1 notes:
 
 ### 配置导入导出
 
@@ -97,23 +127,4 @@ v1.0.1 notes retained for context:
 
 - GitHub Actions 双平台 CI：推送 `v*` 标签自动构建并发布
 - 更新 Flutter 版本至 3.41.9
-
-## 安装
-
-### macOS
-下载 `Jusou-macos.dmg`，打开后将 Jusou 拖入 Applications 文件夹。首次提示「无法验证开发者」请在系统设置 → 隐私与安全性中点击「仍要打开」。
-
-### Windows
-下载 `Jusou-windows.zip`，解压后运行 `jusou.exe`。
-
-## 数据源
-
-默认读取 `~/.jusou/index.json` 和 `~/.jusou/sources/*.json`。远程搜索没有内置默认地址，可在应用设置中配置一个或多个地址。
-
-## 校验
-
-```
-macOS:  <!-- shasum -a 256 Jusou-macos.dmg -->
-Windows: <!-- certutil -hashfile Jusou-windows.zip SHA256 -->
-```
 -->

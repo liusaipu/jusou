@@ -78,26 +78,19 @@ Jusou 默认会读取当前用户目录下的本地数据：
 
 ## Crawler
 
-`crawler/` 是独立的 Node.js 爬虫脚本目录，用于抓取或整理外部页面数据。
-
-### TG 频道爬虫
-
-从 Telegram 公开频道抓取网盘分享链接，输出到 `~/.jusou/sources/telegram.json`，Jusou 可直接搜索。
+`crawler/` 是独立的 Node.js 爬虫脚本目录，用于抓取或整理外部页面数据，输出到 `~/.jusou/index.json`，供应用作为本地索引读取。
 
 ```bash
 cd crawler
 npm install
-node tg_crawler.js
+node index.js
 ```
 
-频道列表见 `crawler/channels.txt`，也可以在应用设置的 TG 频道里维护。爬虫会合并读取 `crawler/channels.txt` 和 `~/.jusou/config.json` 中的 `telegram_channels`，并在自动发现新频道时同步更新。建议每周执行一次：
+### TG 频道爬虫
 
-```bash
-# crontab -e 添加（每周日凌晨 3 点）
-0 3 * * 0 cd /Users/lobster/myprojects/jusou && node crawler/tg_crawler.js
-```
+Telegram 公开频道抓取已经内置到应用中（`lib/data/services/telegram_crawler.dart`）。在应用设置中维护 TG 频道列表后，从设置面板点击"运行 TG 爬虫"即可抓取，结果写入 `~/.jusou/sources/telegram.json`，下次搜索自动读取。频道列表与 `~/.jusou/config.json` 中的 `telegram_channels` 字段保持同步。
 
-所有抓取结果视为不可信输入，导入前建议清洗并校验字段。
+所有抓取结果视为不可信输入，链接校验/去重/排序管线会在搜索阶段统一处理。
 
 ## 验证
 

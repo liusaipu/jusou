@@ -15,6 +15,7 @@ import 'package:jusou/data/services/resource_key.dart';
 import 'package:jusou/data/services/remote_search_source.dart';
 import 'package:jusou/data/services/resource_service.dart';
 import 'package:jusou/data/services/resource_source.dart';
+import 'package:jusou/data/services/resource_filter_service.dart';
 import 'package:jusou/data/services/resource_text_normalizer.dart';
 import 'package:jusou/data/services/share_link_parser.dart';
 import 'package:path/path.dart' as p;
@@ -371,6 +372,11 @@ void main() {
       expect(service.sources.whereType<AlipansouSearchSource>(), hasLength(1));
     });
 
+    test('remote source ids are prefixed so multiple adapters can coexist', () {
+      expect(RemoteSearchSource().id, 'remote:generic');
+      expect(const AlipansouSearchSource().id, 'remote:alipansou');
+    });
+
     test('exposes per-source status and failures', () async {
       final service = ResourceService(
         sources: [
@@ -674,6 +680,236 @@ void main() {
         expect(imported.telegramChannels, ['overwrite_channel']);
       },
     );
+  });
+
+  group('ResourceFilterService', () {
+    const service = ResourceFilterService();
+
+    test('filters by type', () {
+      final resources = [
+        _resource(
+          id: 'm1',
+          title: '电影A',
+          shareUrl: 'https://www.alipan.com/s/m1',
+          source: 'local',
+        ),
+        _resource(
+          id: 't1',
+          title: '剧集B',
+          shareUrl: 'https://www.alipan.com/s/t1',
+          source: 'local',
+          year: '2023',
+        ),
+      ];
+      // 修改 type，默认都是 'movie'
+      final tvResource = resources[1].copyWith(type: 'tv');
+      final allResources = [resources[0], tvResource];
+
+      final movies = service.apply(
+        allResources,
+        const FilterCriteria(typeFilter: TypeFilter.movie),
+      );
+      final tvs = service.apply(
+        allResources,
+        const FilterCriteria(typeFilter: TypeFilter.tv),
+      );
+
+      expect(movies, hasLength(1));
+      expect(movies.single.title, '电影A');
+      expect(tvs, hasLength(1));
+      expect(tvs.single.title, '剧集B');
+    });
+
+    test('filters by provider and year', () {
+      final resources = [
+        _resource(
+          id: 'a1',
+          title: '阿里资源',
+          shareUrl: 'https://www.alipan.com/s/a1',
+          source: 'local',
+          year: '2023',
+        ),
+        _resource(
+          id: 'b1',
+          title: '百度资源',
+          shareUrl: 'https://pan.baidu.com/s/b1',
+          source: 'local',
+          year: '2024',
+        ),
+      ];
+
+      final aliyun2023 = service.apply(
+        resources,
+        const FilterCriteria(provider: 'aliyun', year: '2023'),
+      );
+      expect(aliyun2023, hasLength(1));
+      expect(aliyun2023.single.title, '阿里资源');
+
+      final baiduAll = service.apply(
+        resources,
+        const FilterCriteria(provider: 'baidu'),
+      );
+      expect(baiduAll, hasLength(1));
+      expect(baiduAll.single.title, '百度资源');
+    });
+
+    test('filters by share code presence', () {
+      final resources = [
+        _resource(
+          id: 'c1',
+          title: '无码',
+          shareUrl: 'https://www.alipan.com/s/c1',
+          source: 'local',
+        ),
+        _resource(
+          id: 'c2',
+          title: '有码',
+          shareUrl: 'https://www.alipan.com/s/c2',
+          source: 'local',
+          year: '2023',
+        ).copyWith(sharePwd: '1234'),
+      ];
+
+      final withCode = service.apply(
+        resources,
+        const FilterCriteria(codeFilter: CodeFilter.withCode),
+      );
+      final withoutCode = service.apply(
+        resources,
+        const FilterCriteria(codeFilter: CodeFilter.withoutCode),
+      );
+
+      expect(withCode, hasLength(1));
+      expect(withCode.single.title, '有码');
+      expect(withoutCode, hasLength(1));
+      expect(withoutCode.single.title, '无码');
+    });
+
+    test('filters by validation status', () {
+      final resources = [
+        _resource(
+          id: 'v1',
+          title: '已校验',
+          shareUrl: 'https://www.alipan.com/s/v1',
+          source: 'local',
+        ).copyWith(
+          validation: LinkValidationResult(
+            level: LinkValidationLevel.recognizedShare,
+            reason: '已识别',
+            checkedAt: DateTime(2026),
+          ),
+        ),
+        _resource(
+          id: 'v2',
+          title: '失效',
+          shareUrl: 'https://www.alipan.com/s/v2',
+          source: 'local',
+        ).copyWith(
+          validation: LinkValidationResult(
+            level: LinkValidationLevel.invalid,
+            reason: 'test',
+            checkedAt: DateTime(2026),
+          ),
+        ),
+      ];
+
+      final validOnly = service.apply(
+        resources,
+        const FilterCriteria(validationFilter: ValidationFilter.verified),
+      );
+      final invalidOnly = service.apply(
+        resources,
+        const FilterCriteria(validationFilter: ValidationFilter.invalid),
+      );
+
+      expect(validOnly, hasLength(1));
+      expect(validOnly.single.title, '已校验');
+      expect(invalidOnly, hasLength(1));
+      expect(invalidOnly.single.title, '失效');
+    });
+
+    test('filters merged sources only', () {
+      final resources = [
+        _resource(
+          id: 's1',
+          title: '单源',
+          shareUrl: 'https://www.alipan.com/s/s1',
+          source: 'local',
+        ),
+        _resource(
+          id: 's2',
+          title: '多源',
+          shareUrl: 'https://www.alipan.com/s/s2',
+          source: 'local',
+        ).copyWith(duplicateCount: 3),
+      ];
+
+      final mergedOnly = service.apply(
+        resources,
+        const FilterCriteria(onlyMergedSources: true),
+      );
+      expect(mergedOnly, hasLength(1));
+      expect(mergedOnly.single.title, '多源');
+    });
+
+    test('sorts by latest and file size', () {
+      final resources = [
+        _resource(
+          id: 'old',
+          title: '旧资源',
+          shareUrl: 'https://www.alipan.com/s/old',
+          source: 'local',
+          fileSize: '1GB',
+        ),
+        _resource(
+          id: 'new',
+          title: '新资源',
+          shareUrl: 'https://www.alipan.com/s/new',
+          source: 'local',
+          fileSize: '10GB',
+        ),
+      ];
+      final withDates = [
+        resources[0].copyWith(updatedAt: DateTime(2024)),
+        resources[1].copyWith(updatedAt: DateTime(2026)),
+      ];
+
+      final byLatest = service.apply(
+        withDates,
+        const FilterCriteria(sortMode: SortMode.latest),
+      );
+      expect(byLatest.first.title, '新资源');
+
+      final bySize = service.apply(
+        withDates,
+        const FilterCriteria(sortMode: SortMode.fileSize),
+      );
+      expect(bySize.first.title, '新资源');
+    });
+
+    test('sorts by multi-source trust', () {
+      final resources = [
+        _resource(
+          id: 'single',
+          title: '单源',
+          shareUrl: 'https://www.alipan.com/s/single',
+          source: 'local',
+        ),
+        _resource(
+          id: 'multi',
+          title: '多源',
+          shareUrl: 'https://www.alipan.com/s/multi',
+          source: 'local',
+        ).copyWith(duplicateCount: 5, qualityScore: 80),
+      ];
+
+      final byMultiSource = service.apply(
+        resources,
+        const FilterCriteria(sortMode: SortMode.multiSource),
+      );
+      expect(byMultiSource.first.title, '多源');
+      expect(byMultiSource.last.title, '单源');
+    });
   });
 }
 

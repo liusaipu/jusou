@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:dio/dio.dart';
 
 import '../models/resource.dart';
+import 'dio_factory.dart';
 import 'resource_source.dart';
 
 class RemoteSearchSource implements ResourceSource {
@@ -12,7 +13,7 @@ class RemoteSearchSource implements ResourceSource {
   RemoteSearchSource({this.baseUrl = '', this.maxResults = 120});
 
   @override
-  String get id => 'remote';
+  String get id => 'remote:generic';
 
   @override
   String get label => '远程搜索';
@@ -32,14 +33,7 @@ class RemoteSearchSource implements ResourceSource {
       );
     }
 
-    final dio = Dio(
-      BaseOptions(
-        baseUrl: baseUrl,
-        connectTimeout: const Duration(seconds: 6),
-        receiveTimeout: const Duration(seconds: 18),
-        sendTimeout: const Duration(seconds: 6),
-      ),
-    );
+    final dio = DioFactory.create(baseUrl: baseUrl);
 
     final stopwatch = Stopwatch()..start();
     final response = await dio.get<dynamic>(
@@ -139,7 +133,7 @@ class RemoteSearchSource implements ResourceSource {
       fileSize: _extractFileSize(note),
       source: 'remote:$source',
       updatedAt: _parseDateTime(item['datetime']),
-      mergedSources: const ['remote'],
+      mergedSources: const ['remote:generic'],
     );
   }
 

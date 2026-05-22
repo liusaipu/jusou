@@ -118,53 +118,9 @@ String _resourceKey(Resource resource) {
   return ResourceKey.forResource(resource);
 }
 
-int _fileSizeBytes(Resource resource) {
-  final text = resource.fileSize?.trim();
-  if (text == null || text.isEmpty) return -1;
-
-  final match = RegExp(
-    r'(\d+(?:\.\d+)?)\s*(TB|GB|MB|KB|B)',
-    caseSensitive: false,
-  ).firstMatch(text);
-  if (match == null) return -1;
-
-  final value = double.tryParse(match.group(1) ?? '');
-  if (value == null) return -1;
-
-  final unit = (match.group(2) ?? '').toUpperCase();
-  final multiplier = switch (unit) {
-    'TB' => 1024 * 1024 * 1024 * 1024,
-    'GB' => 1024 * 1024 * 1024,
-    'MB' => 1024 * 1024,
-    'KB' => 1024,
-    _ => 1,
-  };
-  return (value * multiplier).round();
-}
-
 String _formatDateTime(DateTime value) {
   final local = value.toLocal();
   String two(int number) => number.toString().padLeft(2, '0');
   return '${local.year}-${two(local.month)}-${two(local.day)} '
       '${two(local.hour)}:${two(local.minute)}';
-}
-
-List<String> _parseTelegramChannels(String text) {
-  final seen = <String>{};
-  final channels = <String>[];
-  for (final raw in text.split(RegExp(r'[\n,;]+'))) {
-    var value = raw.trim();
-    if (value.isEmpty) continue;
-    value = value
-        .replaceFirst(RegExp(r'^https?://t\.me/s/', caseSensitive: false), '')
-        .replaceFirst(RegExp(r'^https?://t\.me/', caseSensitive: false), '')
-        .replaceFirst('@', '');
-    value = value.split(RegExp(r'[/?#]')).first.trim().toLowerCase();
-    if (!RegExp(r'^[a-z0-9_]{3,}$').hasMatch(value)) continue;
-    if (seen.add(value)) {
-      channels.add(value);
-      if (channels.length >= LibrarySettings.maxTelegramChannels) break;
-    }
-  }
-  return channels;
 }

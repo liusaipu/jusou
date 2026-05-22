@@ -138,6 +138,9 @@ class ResourceAggregator {
   }
 }
 
+/// 搜索管线刻意不开启网络校验：一次搜索结果可能上百条，逐个发请求会拖慢首屏并触发风控。
+/// 此处仅做格式/识别级判断；网络可达性校验由 [ResourceService.validateLink]
+/// 或 LocalLibraryService 的自动校验任务在用户主动触发时调用。
 class _DefaultLinkValidator extends LinkValidator {
   const _DefaultLinkValidator() : super();
 }

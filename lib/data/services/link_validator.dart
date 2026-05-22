@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 
 import '../models/link_validation.dart';
 import '../models/resource.dart';
+import 'dio_factory.dart';
 import 'share_link_parser.dart';
 
 class LinkValidator {
@@ -70,27 +71,28 @@ class LinkValidator {
     );
   }
 
-  Future<List<Resource>> validateAll(List<Resource> resources) async {
-    final validated = await Future.wait(
-      resources.map((resource) async {
-        final result = await validate(resource);
-        return resource.copyWith(validation: result);
-      }),
-    );
+  Future<List<Resource>> validateAll(
+    List<Resource> resources, {
+    int concurrency = 5,
+  }) async {
+    final validated = <Resource>[];
+    for (var i = 0; i < resources.length; i += concurrency) {
+      final batch = resources.skip(i).take(concurrency);
+      final results = await Future.wait(
+        batch.map((resource) async {
+          final result = await validate(resource);
+          return resource.copyWith(validation: result);
+        }),
+      );
+      validated.addAll(results);
+    }
     return validated.where((resource) {
       return resource.validation?.level != LinkValidationLevel.invalid;
     }).toList();
   }
 
   Future<bool> _checkReachable(String url) async {
-    final dio =
-        _dio ??
-        Dio(
-          BaseOptions(
-            connectTimeout: const Duration(seconds: 5),
-            receiveTimeout: const Duration(seconds: 8),
-          ),
-        );
+    final dio = _dio ?? DioFactory.createForValidation();
 
     if (await _requestReachable(dio, url, 'HEAD')) return true;
     return _requestReachable(dio, url, 'GET');
@@ -106,6 +108,8 @@ class LinkValidator {
           responseType: ResponseType.plain,
           headers: method == 'GET' ? const {'Range': 'bytes=0-0'} : null,
           validateStatus: (status) => status != null && status < 500,
+          sendTimeout: const Duration(seconds: 5),
+          receiveTimeout: const Duration(seconds: 6),
         ),
       );
       return response.statusCode != null && response.statusCode! < 400;

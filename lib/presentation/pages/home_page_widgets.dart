@@ -33,8 +33,21 @@ class _SearchSummary extends StatelessWidget {
         children: [
           Text(
             '$countText$dedupeText · ${elapsedMs}ms',
-            style: const TextStyle(color: Color(0xFF888888), fontSize: 12),
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              fontSize: 12,
+            ),
           ),
+          if (total > 100) ...[
+            const SizedBox(height: 4),
+            Text(
+              '结果较多，建议使用上方筛选条件缩小范围',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.primary,
+                fontSize: 11,
+              ),
+            ),
+          ],
           if (sourceStatuses.isNotEmpty) ...[
             const SizedBox(height: 8),
             _SourceStatusStrip(statuses: sourceStatuses),
@@ -166,13 +179,15 @@ class _PosterTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final posterUrl = url?.trim();
 
+    final placeholderColor = Theme.of(context).colorScheme.onSurfaceVariant;
+
     return SizedBox(
       width: 64,
       height: 90,
       child: ColoredBox(
-        color: const Color(0xFF2A2A2A),
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
         child: posterUrl == null || posterUrl.isEmpty
-            ? const Icon(Icons.movie_outlined, color: Color(0xFF555555))
+            ? Icon(Icons.movie_outlined, color: placeholderColor)
             : CachedNetworkImage(
                 imageUrl: posterUrl,
                 httpHeaders: _posterHeaders,
@@ -189,9 +204,9 @@ class _PosterTile extends StatelessWidget {
                   );
                 },
                 errorWidget: (context, url, error) {
-                  return const Icon(
+                  return Icon(
                     Icons.broken_image_outlined,
-                    color: Color(0xFF555555),
+                    color: placeholderColor,
                   );
                 },
               ),
@@ -293,9 +308,9 @@ class _ResourceCard extends StatelessWidget {
                         if (resource.fileSize != null)
                           Text(
                             resource.fileSize!,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 12,
-                              color: Color(0xFF888888),
+                              color: Theme.of(context).colorScheme.onSurfaceVariant,
                             ),
                           ),
                         _MetaBadge(
@@ -377,6 +392,7 @@ class _ResourceMetaLine extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final mutedColor = Theme.of(context).colorScheme.onSurfaceVariant;
     return Wrap(
       spacing: 8,
       runSpacing: 4,
@@ -385,7 +401,7 @@ class _ResourceMetaLine extends StatelessWidget {
         if (resource.year != null)
           Text(
             resource.year!,
-            style: const TextStyle(fontSize: 12, color: Color(0xFF888888)),
+            style: TextStyle(fontSize: 12, color: mutedColor),
           ),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
@@ -405,7 +421,7 @@ class _ResourceMetaLine extends StatelessWidget {
         if (resource.episodeCount != null)
           Text(
             '共${resource.episodeCount}集',
-            style: const TextStyle(fontSize: 12, color: Color(0xFF888888)),
+            style: TextStyle(fontSize: 12, color: mutedColor),
           ),
       ],
     );
@@ -503,7 +519,7 @@ class _ResourceDetailSheet extends StatelessWidget {
                   if (resource.year != null)
                     _MetaBadge(
                       label: resource.year!,
-                      color: const Color(0xFF888888),
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
                   _MetaBadge(
                     label: _resourceTypeLabel(resource.type),
@@ -608,7 +624,10 @@ class _DetailLabel extends StatelessWidget {
         children: [
           Text(
             label,
-            style: const TextStyle(color: Color(0xFF888888), fontSize: 12),
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              fontSize: 12,
+            ),
           ),
           const SizedBox(height: 4),
           SelectableText(value, style: const TextStyle(fontSize: 13)),
@@ -669,7 +688,11 @@ class _SectionHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Icon(icon, size: 18, color: const Color(0xFF888888)),
+        Icon(
+          icon,
+          size: 18,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+        ),
         const SizedBox(width: 6),
         Text(
           title,
@@ -710,7 +733,11 @@ class _MessageState extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(icon, size: 42, color: const Color(0xFF333333)),
+          Icon(
+            icon,
+            size: 42,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
           const SizedBox(height: 12),
           Text(
             title,
@@ -720,7 +747,10 @@ class _MessageState extends StatelessWidget {
           const SizedBox(height: 6),
           Text(
             message,
-            style: const TextStyle(color: Color(0xFF888888), fontSize: 13),
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              fontSize: 13,
+            ),
             textAlign: TextAlign.center,
           ),
           if (action != null) ...[const SizedBox(height: 12), action!],

@@ -10,10 +10,13 @@ import '../../data/models/link_validation.dart';
 import '../../data/models/local_library.dart';
 import '../../data/models/resource.dart';
 import '../../data/services/local_library_service.dart';
+import '../../data/services/resource_filter_service.dart';
 import '../../data/services/resource_key.dart';
 import '../../data/services/resource_service.dart';
 import '../../data/services/share_link_parser.dart';
+import '../../data/services/telegram_crawler.dart';
 import '../../main.dart';
+import 'settings_sheet.dart';
 
 part 'home_page_widgets.dart';
 part 'home_page_helpers.dart';
@@ -29,51 +32,6 @@ const _posterHeaders = {
   'Referer': 'https://www.alipan.com/',
 };
 
-enum _SortMode {
-  relevance('相关度'),
-  latest('最新'),
-  multiSource('多源可信'),
-  fileSize('文件大小');
-
-  const _SortMode(this.label);
-
-  final String label;
-}
-
-enum _TypeFilter {
-  all('全部类型', null),
-  movie('电影', 'movie'),
-  tv('剧集', 'tv'),
-  documentary('纪录片', 'documentary'),
-  variety('综艺', 'variety');
-
-  const _TypeFilter(this.label, this.value);
-
-  final String label;
-  final String? value;
-}
-
-enum _CodeFilter {
-  all('提取码不限'),
-  withCode('需要提取码'),
-  withoutCode('无提取码');
-
-  const _CodeFilter(this.label);
-
-  final String label;
-}
-
-enum _ValidationFilter {
-  all('校验不限'),
-  verified('已识别'),
-  reachable('可访问'),
-  unchecked('未校验'),
-  invalid('已失效');
-
-  const _ValidationFilter(this.label);
-
-  final String label;
-}
 
 const _configFileTypeGroup = XTypeGroup(
   label: 'JSON 配置文件',
@@ -91,7 +49,6 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   final _searchController = TextEditingController();
-  final _remoteUrlControllers = <TextEditingController>[];
   final _libraryService = LocalLibraryService();
 
   ResourceService _resourceService = ResourceService();
@@ -107,18 +64,20 @@ class _HomePageState extends State<HomePage> {
 
   String _selectedProvider = _allProviderKey;
   String _selectedYear = _allYearKey;
-  _SortMode _sortMode = _SortMode.relevance;
-  _TypeFilter _typeFilter = _TypeFilter.all;
-  _CodeFilter _codeFilter = _CodeFilter.all;
-  _ValidationFilter _validationFilter = _ValidationFilter.all;
+  SortMode _sortMode = SortMode.relevance;
+  TypeFilter _typeFilter = TypeFilter.all;
+  CodeFilter _codeFilter = CodeFilter.all;
+  ValidationFilter _validationFilter = ValidationFilter.all;
   bool _onlyMergedSources = false;
   bool _isSearching = false;
   bool _isLoadingLibrary = true;
+  bool _isCrawling = false;
   String? _error;
   int _total = 0;
   int _totalBeforeDedupe = 0;
   int _elapsedMs = 0;
   final Set<String> _validatingLinks = {};
+  Timer? _searchDebounceTimer;
 
   @override
   void initState() {
@@ -137,21 +96,98 @@ class _HomePageState extends State<HomePage> {
       _searchHistory = snapshot.searchHistory;
       _invalidReports = snapshot.invalidReports;
       _settings = snapshot.settings;
-      for (final c in _remoteUrlControllers) {
-        c.dispose();
-      }
-      _remoteUrlControllers.clear();
-      for (final url in snapshot.settings.remoteUrls) {
-        _remoteUrlControllers.add(TextEditingController(text: url));
-      }
-      if (_remoteUrlControllers.isEmpty) {
-        _remoteUrlControllers.add(TextEditingController());
-      }
       _resourceService = ResourceService(
         enableRemote: snapshot.settings.enableRemote,
         remoteUrls: snapshot.settings.remoteUrls,
       );
       _isLoadingLibrary = false;
+    });
+
+    _maybeAutoValidate();
+  }
+
+  Future<void> _maybeAutoValidate() async {
+    if (!_libraryService.shouldAutoValidate()) return;
+
+    final candidates = _libraryService.getCandidatesForAutoValidation();
+    if (candidates.isEmpty) return;
+
+    var validatedCount = 0;
+    var invalidCount = 0;
+
+    for (final resource in candidates) {
+      try {
+        final updated = await _resourceService.validateLink(
+          resource,
+          enableNetworkCheck: true,
+        );
+        await _libraryService.cacheValidation(updated);
+        if (updated.validation?.level == LinkValidationLevel.invalid) {
+          invalidCount++;
+        }
+        validatedCount++;
+      } on Object {
+        // 单条校验失败不影响整体流程
+      }
+    }
+
+    await _libraryService.recordAutoValidation();
+
+    if (!mounted) return;
+    if (invalidCount > 0) {
+      _showSnack('自动校验完成：$validatedCount 条中 $invalidCount 条已失效');
+    } else if (validatedCount > 0) {
+      _showSnack('自动校验完成：$validatedCount 条链接状态正常');
+    }
+  }
+
+  Future<void> _runCrawler() async {
+    final channels = _settings.telegramChannels;
+    if (channels.isEmpty) {
+      _showSnack('请先配置 Telegram 频道');
+      return;
+    }
+
+    setState(() => _isCrawling = true);
+    _showSnack('开始爬取 ${channels.length} 个频道...');
+
+    try {
+      final crawler = TelegramCrawler();
+      final (newResources, newChannels, error) = await crawler.run(channels);
+
+      if (!mounted) return;
+      setState(() => _isCrawling = false);
+
+      if (error != null) {
+        _showSnack('爬取失败: $error');
+        return;
+      }
+
+      _showSnack(
+        '爬取完成: 新增 $newResources 条资源${newChannels > 0 ? ', 发现 $newChannels 个新频道' : ''}',
+      );
+
+      // 重新加载 ResourceService 以包含新数据
+      _resourceService = ResourceService(
+        enableRemote: _settings.enableRemote,
+        remoteUrls: _settings.remoteUrls,
+      );
+
+      // 如果当前有搜索词，刷新结果
+      if (_searchController.text.trim().isNotEmpty) {
+        _doSearch(_searchController.text);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isCrawling = false);
+      _showSnack('爬取异常: $e');
+    }
+  }
+
+  void _debouncedSearch(String query) {
+    _searchDebounceTimer?.cancel();
+    _searchDebounceTimer = Timer(const Duration(milliseconds: 300), () {
+      _doSearch(query);
     });
   }
 
@@ -359,16 +395,6 @@ class _HomePageState extends State<HomePage> {
     isDarkMode.value = settings.darkMode;
     setState(() {
       _settings = settings;
-      for (final c in _remoteUrlControllers) {
-        c.dispose();
-      }
-      _remoteUrlControllers.clear();
-      for (final url in settings.remoteUrls) {
-        _remoteUrlControllers.add(TextEditingController(text: url));
-      }
-      if (_remoteUrlControllers.isEmpty) {
-        _remoteUrlControllers.add(TextEditingController());
-      }
       _resourceService = ResourceService(
         enableRemote: settings.enableRemote,
         remoteUrls: settings.remoteUrls,
@@ -418,255 +444,31 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _openSettingsSheet() async {
-    var enableRemote = _settings.enableRemote;
-    final urlControllers = _remoteUrlControllers
-        .map((c) => TextEditingController(text: c.text))
-        .toList();
-    final telegramController = TextEditingController(
-      text: _settings.telegramChannels.join('\n'),
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) {
+        return SettingsSheet(
+          initialSettings: _settings,
+          isCrawling: _isCrawling,
+          onSave: (next) => _applySettings(next, refreshSearch: false),
+          onExportConfig: _exportConfig,
+          onImportConfig: _importConfig,
+          onClearHistory: () async {
+            await _libraryService.clearHistory();
+            await _loadLibrary();
+          },
+          onClearRecentlyOpened: () async {
+            await _libraryService.clearRecentlyOpened();
+            await _loadLibrary();
+          },
+          onRunCrawler: _runCrawler,
+        );
+      },
     );
-    if (urlControllers.isEmpty) {
-      urlControllers.add(TextEditingController());
-    }
-
-    try {
-      await showModalBottomSheet<void>(
-        context: context,
-        isScrollControlled: true,
-        builder: (context) {
-          return StatefulBuilder(
-            builder: (context, setSheetState) {
-              return SafeArea(
-                child: Padding(
-                  padding: EdgeInsets.fromLTRB(
-                    16,
-                    16,
-                    16,
-                    MediaQuery.viewInsetsOf(context).bottom + 16,
-                  ),
-                  child: ListView(
-                    shrinkWrap: true,
-                    children: [
-                      SwitchListTile(
-                        value: enableRemote,
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text('远程搜索'),
-                        onChanged: (value) {
-                          setSheetState(() {
-                            enableRemote = value;
-                          });
-                        },
-                      ),
-                      ConstrainedBox(
-                        constraints: const BoxConstraints(maxHeight: 280),
-                        child: ReorderableListView.builder(
-                          shrinkWrap: true,
-                          buildDefaultDragHandles: false,
-                          itemCount: urlControllers.length,
-                          onReorder: enableRemote
-                              ? (oldIndex, newIndex) {
-                                  setSheetState(() {
-                                    if (newIndex > oldIndex) newIndex -= 1;
-                                    final controller = urlControllers.removeAt(
-                                      oldIndex,
-                                    );
-                                    urlControllers.insert(newIndex, controller);
-                                  });
-                                }
-                              : (_, _) {},
-                          itemBuilder: (context, i) {
-                            return Padding(
-                              key: ValueKey(urlControllers[i]),
-                              padding: const EdgeInsets.only(bottom: 8),
-                              child: Row(
-                                children: [
-                                  ReorderableDragStartListener(
-                                    index: i,
-                                    enabled:
-                                        enableRemote &&
-                                        urlControllers.length > 1,
-                                    child: Tooltip(
-                                      message: '拖动调整顺序',
-                                      child: Icon(
-                                        Icons.drag_indicator,
-                                        size: 20,
-                                        color: enableRemote
-                                            ? Theme.of(
-                                                context,
-                                              ).colorScheme.onSurfaceVariant
-                                            : Theme.of(context).disabledColor,
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: TextField(
-                                      controller: urlControllers[i],
-                                      enabled: enableRemote,
-                                      decoration: InputDecoration(
-                                        labelText: '远程搜索地址 ${i + 1}',
-                                        prefixIcon: const Icon(
-                                          Icons.link,
-                                          size: 18,
-                                        ),
-                                        suffixIcon: urlControllers.length > 1
-                                            ? IconButton(
-                                                icon: const Icon(
-                                                  Icons.close,
-                                                  size: 18,
-                                                ),
-                                                onPressed: enableRemote
-                                                    ? () {
-                                                        setSheetState(() {
-                                                          final controller =
-                                                              urlControllers
-                                                                  .removeAt(i);
-                                                          controller.dispose();
-                                                        });
-                                                      }
-                                                    : null,
-                                              )
-                                            : null,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            );
-                          },
-                          proxyDecorator: (child, index, animation) {
-                            return Material(
-                              color: Colors.transparent,
-                              child: FadeTransition(
-                                opacity: animation.drive(
-                                  Tween<double>(begin: 0.92, end: 1),
-                                ),
-                                child: child,
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                      if (urlControllers.length < LibrarySettings.maxRemoteUrls)
-                        TextButton.icon(
-                          onPressed: enableRemote
-                              ? () {
-                                  setSheetState(() {
-                                    urlControllers.add(TextEditingController());
-                                  });
-                                }
-                              : null,
-                          icon: const Icon(Icons.add, size: 18),
-                          label: const Text('添加备用地址'),
-                        ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: telegramController,
-                        minLines: 3,
-                        maxLines: 6,
-                        decoration: const InputDecoration(
-                          labelText: 'TG 频道',
-                          hintText: '@channel 或 https://t.me/channel，每行一个',
-                          prefixIcon: Icon(Icons.forum_outlined, size: 18),
-                          alignLabelWithHint: true,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          FilledButton.icon(
-                            onPressed: () async {
-                              final navigator = Navigator.of(context);
-                              final urls = urlControllers
-                                  .map((c) => c.text.trim())
-                                  .where((u) => u.isNotEmpty)
-                                  .toList();
-                              final next = LibrarySettings(
-                                enableRemote: enableRemote,
-                                remoteUrls: urls,
-                                darkMode: _settings.darkMode,
-                                telegramChannels: _parseTelegramChannels(
-                                  telegramController.text,
-                                ),
-                              );
-                              await _applySettings(next, refreshSearch: false);
-                              if (!mounted) return;
-                              navigator.pop();
-                              if (_searchController.text.trim().isNotEmpty) {
-                                _doSearch(_searchController.text);
-                              }
-                            },
-                            icon: const Icon(Icons.check, size: 18),
-                            label: const Text('保存'),
-                          ),
-                          OutlinedButton.icon(
-                            onPressed: () {
-                              Navigator.of(context).pop();
-                              if (_searchController.text.trim().isNotEmpty) {
-                                _doSearch(_searchController.text);
-                              }
-                            },
-                            icon: const Icon(Icons.refresh, size: 18),
-                            label: const Text('刷新本地索引'),
-                          ),
-                          TextButton.icon(
-                            onPressed: _exportConfig,
-                            icon: const Icon(Icons.download_outlined, size: 18),
-                            label: const Text('导出配置'),
-                          ),
-                          TextButton.icon(
-                            onPressed: () async {
-                              Navigator.of(context).pop();
-                              await _importConfig();
-                            },
-                            icon: const Icon(Icons.upload_file, size: 18),
-                            label: const Text('导入配置'),
-                          ),
-                          TextButton.icon(
-                            onPressed: () async {
-                              await _libraryService.clearHistory();
-                              await _loadLibrary();
-                              if (context.mounted) {
-                                Navigator.of(context).pop();
-                              }
-                            },
-                            icon: const Icon(
-                              Icons.history_toggle_off,
-                              size: 18,
-                            ),
-                            label: const Text('清空历史'),
-                          ),
-                          TextButton.icon(
-                            onPressed: () async {
-                              await _libraryService.clearRecentlyOpened();
-                              await _loadLibrary();
-                              if (context.mounted) {
-                                Navigator.of(context).pop();
-                              }
-                            },
-                            icon: const Icon(
-                              Icons.delete_sweep_outlined,
-                              size: 18,
-                            ),
-                            label: const Text('清空最近打开'),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            },
-          );
-        },
-      );
-    } finally {
-      for (final controller in urlControllers) {
-        controller.dispose();
-      }
-      telegramController.dispose();
+    if (!mounted) return;
+    if (_searchController.text.trim().isNotEmpty) {
+      _doSearch(_searchController.text);
     }
   }
 
@@ -699,10 +501,8 @@ class _HomePageState extends State<HomePage> {
 
   @override
   void dispose() {
+    _searchDebounceTimer?.cancel();
     _searchController.dispose();
-    for (final c in _remoteUrlControllers) {
-      c.dispose();
-    }
     super.dispose();
   }
 
@@ -735,7 +535,7 @@ class _HomePageState extends State<HomePage> {
                 hintText: '搜电影、电视剧...',
                 prefixIcon: Icon(Icons.search, size: 20),
               ),
-              onSubmitted: _doSearch,
+              onSubmitted: _debouncedSearch,
             ),
           ),
           const SizedBox(width: 8),
@@ -744,7 +544,7 @@ class _HomePageState extends State<HomePage> {
             child: IconButton.filled(
               onPressed: _searchController.text.trim().isEmpty
                   ? null
-                  : () => _doSearch(_searchController.text),
+                  : () => _debouncedSearch(_searchController.text),
               icon: const Icon(Icons.arrow_forward, size: 20),
             ),
           ),
@@ -793,11 +593,11 @@ class _HomePageState extends State<HomePage> {
         runSpacing: 8,
         crossAxisAlignment: WrapCrossAlignment.center,
         children: [
-          _CompactDropdown<_SortMode>(
+          _CompactDropdown<SortMode>(
             icon: Icons.sort,
             value: _sortMode,
             items: [
-              for (final mode in _SortMode.values)
+              for (final mode in SortMode.values)
                 DropdownMenuItem(value: mode, child: Text(mode.label)),
             ],
             onChanged: (value) {
@@ -820,11 +620,11 @@ class _HomePageState extends State<HomePage> {
               });
             },
           ),
-          _CompactDropdown<_TypeFilter>(
+          _CompactDropdown<TypeFilter>(
             icon: Icons.category_outlined,
             value: _typeFilter,
             items: [
-              for (final filter in _TypeFilter.values)
+              for (final filter in TypeFilter.values)
                 DropdownMenuItem(value: filter, child: Text(filter.label)),
             ],
             onChanged: (value) {
@@ -848,11 +648,11 @@ class _HomePageState extends State<HomePage> {
               });
             },
           ),
-          _CompactDropdown<_CodeFilter>(
+          _CompactDropdown<CodeFilter>(
             icon: Icons.key_outlined,
             value: _codeFilter,
             items: [
-              for (final filter in _CodeFilter.values)
+              for (final filter in CodeFilter.values)
                 DropdownMenuItem(value: filter, child: Text(filter.label)),
             ],
             onChanged: (value) {
@@ -862,11 +662,11 @@ class _HomePageState extends State<HomePage> {
               });
             },
           ),
-          _CompactDropdown<_ValidationFilter>(
+          _CompactDropdown<ValidationFilter>(
             icon: Icons.verified_outlined,
             value: _validationFilter,
             items: [
-              for (final filter in _ValidationFilter.values)
+              for (final filter in ValidationFilter.values)
                 DropdownMenuItem(value: filter, child: Text(filter.label)),
             ],
             onChanged: (value) {
@@ -991,19 +791,29 @@ class _HomePageState extends State<HomePage> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 40, 16, 24),
       children: [
-        const Icon(Icons.cloud_outlined, size: 48, color: Color(0xFF333333)),
+        Icon(
+          Icons.cloud_outlined,
+          size: 48,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+        ),
         const SizedBox(height: 12),
-        const Center(
+        Center(
           child: Text(
             '搜索多来源网盘资源',
-            style: TextStyle(color: Color(0xFF888888), fontSize: 14),
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              fontSize: 14,
+            ),
           ),
         ),
         const SizedBox(height: 4),
         Center(
           child: Text(
             _discoverySubtitle(),
-            style: const TextStyle(color: Color(0xFF555555), fontSize: 12),
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              fontSize: 12,
+            ),
           ),
         ),
         if (!_isLoadingLibrary && !_hasConfiguredSources) ...[
@@ -1016,10 +826,13 @@ class _HomePageState extends State<HomePage> {
             ),
           ),
           const SizedBox(height: 4),
-          const Center(
+          Center(
             child: Text(
               '也可以放入 ~/.jusou/index.json 或 ~/.jusou/sources/*.json',
-              style: TextStyle(color: Color(0xFF777777), fontSize: 12),
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                fontSize: 12,
+              ),
               textAlign: TextAlign.center,
             ),
           ),
@@ -1088,7 +901,10 @@ class _HomePageState extends State<HomePage> {
           _SectionHeader(icon: Icons.report_gmailerrorred, title: '失效反馈'),
           Text(
             '已记录 ${_invalidReports.length} 条',
-            style: const TextStyle(color: Color(0xFF888888), fontSize: 12),
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              fontSize: 12,
+            ),
           ),
         ],
       ],
@@ -1096,57 +912,18 @@ class _HomePageState extends State<HomePage> {
   }
 
   List<Resource> _filteredResults() {
-    final filtered = _allResults.where((resource) {
-      if (_selectedProvider != _allProviderKey &&
-          _providerKeyForResource(resource) != _selectedProvider) {
-        return false;
-      }
-      if (_typeFilter.value != null && resource.type != _typeFilter.value) {
-        return false;
-      }
-      if (_selectedYear != _allYearKey && resource.year != _selectedYear) {
-        return false;
-      }
-      if (_codeFilter == _CodeFilter.withCode && !_hasShareCode(resource)) {
-        return false;
-      }
-      if (_codeFilter == _CodeFilter.withoutCode && _hasShareCode(resource)) {
-        return false;
-      }
-      if (_onlyMergedSources && resource.duplicateCount <= 1) {
-        return false;
-      }
-      return _matchesValidationFilter(resource);
-    }).toList();
-
-    switch (_sortMode) {
-      case _SortMode.relevance:
-        return filtered;
-      case _SortMode.latest:
-        return filtered..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-      case _SortMode.multiSource:
-        return filtered..sort((a, b) {
-          final duplicateCompare = b.duplicateCount.compareTo(a.duplicateCount);
-          if (duplicateCompare != 0) return duplicateCompare;
-          return b.qualityScore.compareTo(a.qualityScore);
-        });
-      case _SortMode.fileSize:
-        return filtered
-          ..sort((a, b) => _fileSizeBytes(b).compareTo(_fileSizeBytes(a)));
-    }
-  }
-
-  bool _matchesValidationFilter(Resource resource) {
-    final level = resource.validation?.level;
-    return switch (_validationFilter) {
-      _ValidationFilter.all => true,
-      _ValidationFilter.verified =>
-        level != null && level != LinkValidationLevel.invalid,
-      _ValidationFilter.reachable =>
-        level != null && level.score >= LinkValidationLevel.httpReachable.score,
-      _ValidationFilter.unchecked => level == null,
-      _ValidationFilter.invalid => level == LinkValidationLevel.invalid,
-    };
+    return const ResourceFilterService().apply(
+      _allResults,
+      FilterCriteria(
+        provider: _selectedProvider,
+        year: _selectedYear,
+        sortMode: _sortMode,
+        typeFilter: _typeFilter,
+        codeFilter: _codeFilter,
+        validationFilter: _validationFilter,
+        onlyMergedSources: _onlyMergedSources,
+      ),
+    );
   }
 
   List<_ProviderFilterOption> _providerFilterOptions() {

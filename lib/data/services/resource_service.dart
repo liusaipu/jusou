@@ -172,7 +172,7 @@ class ResourceService {
   ResourceAggregator _buildAggregatorWithRemoteUrl(String url) {
     final remoteSource = _remoteSourceForUrl(url);
     final baseSources = _aggregator.sources
-        .where((s) => s.id != 'remote')
+        .where((s) => !s.id.startsWith('remote:'))
         .toList();
     return ResourceAggregator(sources: [remoteSource, ...baseSources]);
   }

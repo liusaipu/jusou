@@ -17,6 +17,9 @@ class LocalLibraryService {
   static const _invalidReportsKey = 'invalid_reports';
   static const _settingsKey = 'settings';
   static const _validationCacheKey = 'validation_cache';
+  static const _lastAutoValidationKey = 'last_auto_validation';
+  static const autoValidationIntervalDays = 7;
+  static const autoValidationSampleSize = 20;
 
   final bool enablePersistence;
   Box<dynamic>? _box;
@@ -214,6 +217,37 @@ class LocalLibraryService {
   Future<void> clearRecentlyOpened() async {
     await initialize();
     await _write(_recentlyOpenedKey, const []);
+  }
+
+  /// 检查是否距离上次自动验证已超过 [autoValidationIntervalDays] 天。
+  bool shouldAutoValidate() {
+    final last = _read(_lastAutoValidationKey);
+    if (last == null) return true;
+    final lastDate = DateTime.tryParse(last.toString());
+    if (lastDate == null) return true;
+    return DateTime.now().difference(lastDate).inDays >= autoValidationIntervalDays;
+  }
+
+  /// 记录本次自动验证的时间戳。
+  Future<void> recordAutoValidation() async {
+    await initialize();
+    await _write(_lastAutoValidationKey, DateTime.now().toIso8601String());
+  }
+
+  /// 返回收藏和最近打开中需要去重合并后的候选资源，用于自动抽样验证。
+  List<Resource> getCandidatesForAutoValidation() {
+    final favorites = _readResourceList(_favoritesKey);
+    final recent = _readResourceList(_recentlyOpenedKey);
+    final seen = <String>{};
+    final candidates = <Resource>[];
+    for (final resource in [...favorites, ...recent]) {
+      final key = _resourceKey(resource);
+      if (seen.contains(key)) continue;
+      seen.add(key);
+      candidates.add(resource);
+      if (candidates.length >= autoValidationSampleSize) break;
+    }
+    return candidates;
   }
 
   Future<List<Resource>> applyCachedValidation(List<Resource> resources) async {

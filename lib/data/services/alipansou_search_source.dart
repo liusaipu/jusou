@@ -2,9 +2,11 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
+import 'package:html/parser.dart' show parse;
 import 'package:pointycastle/export.dart';
 
 import '../models/resource.dart';
+import 'dio_factory.dart';
 import 'resource_source.dart';
 
 class AlipansouSearchSource implements ResourceSource {
@@ -24,7 +26,7 @@ class AlipansouSearchSource implements ResourceSource {
   }) : _dio = dio;
 
   @override
-  String get id => 'remote';
+  String get id => 'remote:alipansou';
 
   @override
   String get label => '猫狸盘搜';
@@ -133,14 +135,7 @@ class AlipansouSearchSource implements ResourceSource {
     final existing = _dio;
     if (existing != null) return existing;
 
-    return Dio(
-      BaseOptions(
-        baseUrl: _normalizedBaseUrl,
-        connectTimeout: const Duration(seconds: 6),
-        receiveTimeout: const Duration(seconds: 18),
-        sendTimeout: const Duration(seconds: 6),
-      ),
-    );
+    return DioFactory.create(baseUrl: _normalizedBaseUrl);
   }
 
   List<_AlipansouItem> _parseSearchHtml(String html) {
@@ -155,11 +150,7 @@ class AlipansouSearchSource implements ResourceSource {
       final block = match.group(2) ?? '';
       if (detailPath == null || detailPath.isEmpty) continue;
 
-      final titleHtml = RegExp(
-        r'''name=["']content-title["'][^>]*>([\s\S]*?)</div>''',
-        caseSensitive: false,
-      ).firstMatch(block)?.group(1);
-      final title = _cleanHtmlText(titleHtml ?? '');
+      final title = _extractTitle(block);
       if (title.isEmpty) continue;
 
       final metadataText = _cleanHtmlText(
@@ -187,6 +178,21 @@ class AlipansouSearchSource implements ResourceSource {
     return items;
   }
 
+  /// 优先用 DOM 解析标题，失败时 fallback 到正则。
+  static String _extractTitle(String block) {
+    try {
+      final doc = parse(block);
+      final el = doc.querySelector('[name="content-title"]');
+      return _cleanHtmlText(el?.innerHtml ?? '');
+    } on Object {
+      final titleHtml = RegExp(
+        r'''name=["']content-title["'][^>]*>([\s\S]*?)</div>''',
+        caseSensitive: false,
+      ).firstMatch(block)?.group(1);
+      return _cleanHtmlText(titleHtml ?? '');
+    }
+  }
+
   Future<Resource> _resourceFromItem(_AlipansouItem item) async {
     final shareUrl = resolveShareLinks
         ? await _resolveShareUrl(item) ?? item.downloadUrl
@@ -204,7 +210,7 @@ class AlipansouSearchSource implements ResourceSource {
       fileSize: item.fileSize,
       source: 'remote:alipansou',
       updatedAt: item.updatedAt ?? DateTime(1970),
-      mergedSources: const ['remote'],
+      mergedSources: const ['remote:alipansou'],
     );
   }
 
